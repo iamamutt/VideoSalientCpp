@@ -1,0 +1,21 @@
+version: "3.6"
+
+services:
+  saliency:
+    image: saliency-app:0.1.0
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    environment:
+      - DISPLAY=10.0.0.34:0.0 # IP:0.0 where IP is the IP address of host machine needed for VcXsrv
+    command:
+      ["--vid=samples/vtest.avi", "--par=parameters.yml", "--dir=exports"]
+    volumes:
+      - type: bind
+        source: $USERPROFILE/saliency/share # path to the data to load on host machine
+        target: /home/user/saliency/runtime
+    container_name: bottom-up-visual-saliency
+# Useful docker compose commands:
+# docker-compose up
+# docker-compose run --rm saliency
+# docker-compose run --rm --entrypoint /bin/bash saliency

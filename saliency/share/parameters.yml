@@ -1,0 +1,43 @@
+%YAML:1.0
+---
+# General saliency model parameters
+model:
+   # Max LoG kernel window size. Set to -1 to use ~min(rows, cols)/4
+   max_LoG_size: -1
+   n_LoG_kern: -1
+   gauss_blur_win: -1
+   contrast_factor: 4.
+   central_focus_prop: 6.7000000000000004e-01
+   saliency_thresh: -1.
+# List of feature channel parameters
+feature_channels:
+   # Luminance/Color parameters
+   color:
+      colorspace: LAB
+      rescale: 33.
+      filter: 1.7000000178813934e-01
+      weight: 1.
+   # Line orientation parameters
+   lines:
+      # Kernel size for square gabor patches. Set to -1 to use ~min(rows, cols) * .02
+      gabor_win_size: -1
+      n_rotations: 8
+      sigma: 2.3750000000000000e+00
+      lambda: 8.3750000000000000e+00
+      psi: 1.9635000000000000e+00
+      gamma: 5.0000000000000000e-01
+      weight: 1.
+   # Motion flicker parameters
+   flicker:
+      lower_limit: 32.
+      upper_limit: 255.
+      weight: 1.
+   # Optical flow parameters
+   flow:
+      # Size of square flow estimation window. Set to -1 to use ~min(rows, cols) * .125
+      flow_window_size: -1
+      max_num_points: 150
+      min_point_dist: 8.
+      morph_half_win: 3
+      morph_iters: 8
+      weight: 1.

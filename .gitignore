@@ -30,3 +30,12 @@
 *.exe
 *.out
 *.app
+
+build
+.junk
+.idea
+saliency-image.tar
+.vscode/c_cpp_properties.json
+.vscode/settings.json
+saliency/bin/*
+saliency/share/exports/*

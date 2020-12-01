@@ -1,0 +1,11 @@
+version: "3.6"
+
+services:
+  OpenCV:
+    image: opencv-build:1.0.0
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        OPENCV_VERSION: "4.5.0"
+    container_name: opencv-ubuntu-4.5.0

@@ -1,0 +1,81 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "options": {
+        "cwd": "${workspaceFolder}"
+    },
+    "presentation": {
+        "echo": true,
+        "focus": true,
+        "panel": "shared",
+        "reveal": "always",
+        "clear": true
+    },
+    "tasks": [
+        {
+            "label": "CMake Configure Release",
+            "type": "shell",
+            "command": "cmake --no-warn-unused-cli -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE -DCMAKE_BUILD_TYPE:STRING=Release -B ${workspaceFolder}/build -G \"Unix Makefiles\"",
+            "group": "build",
+            "windows": {
+                "command": "cmake --no-warn-unused-cli -DOPENCV_INSTALL_DIR=${env:USERPROFILE}/lib/gcc/opencv/x64/mingw/staticlib -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE -DCMAKE_BUILD_TYPE:STRING=Release -B ${workspaceFolder}/build -G \"MinGW Makefiles\""
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "CMake Install Release",
+            "type": "shell",
+            "command": "cmake --build . --config Release --target install -- -j 4",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "dependsOn": [
+                "CMake Configure Release"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/build"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Run Saliency Release",
+            "type": "shell",
+            "command": "./bin/saliency",
+            "windows": {
+                "command": "${workspaceFolder}/saliency/bin/saliency.exe"
+            },
+            "args": [
+                "--vid=share/samples/vtest.avi"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/saliency"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Save Docker Image",
+            "type": "shell",
+            "command": "docker",
+            "args": [
+                "save",
+                "-o",
+                "saliency-image.tar",
+                "saliency-app:0.1.0"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "Load Docker Image",
+            "type": "shell",
+            "command": "docker",
+            "args": [
+                "load",
+                "-i",
+                "saliency-image.tar"
+            ],
+            "problemMatcher": []
+        }
+    ]
+}
