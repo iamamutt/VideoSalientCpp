@@ -39,3 +39,4 @@ saliency-image.tar*
 .vscode/settings.json
 saliency/bin/*
 saliency/share/exports/*
+output

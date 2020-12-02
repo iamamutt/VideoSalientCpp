@@ -4,8 +4,12 @@
 
 Detect visual saliency from video or images.
 
+![saliency](media/saliency.gif)
+
+
 *NOTES*:
 
+- Need to implement inhibition of return for output saliency map
 - USB camera option available but currently getting slow FPS.
 
 ## Building from source
@@ -67,7 +71,7 @@ If you don't want to build from source you can use the docker image to run the p
 1. Install Docker Desktop: <https://www.docker.com/get-started>
 2. Check that Docker works from the command line. From a terminal type: `docker --version`.
 3. Obtain the docker image `saliency-image.tar` containing the built saliency program
-4. In a terminal, navigate to the directory containing the docker image and load it with `docker load -i saliency-image.tar`
+4. In a terminal, navigate to the directory containing the docker image and load it with `docker load -i saliency-image.tar.gz`
 5. Run the image by entering the command `docker run -it --rm saliency-app:v0.1.0`. You should see the saliency program help documentation.
 
 ### Configure
