@@ -4,7 +4,7 @@
 
 
 # build from opencv/ffmpeg image, copying build files and building release
-FROM opencv-build:1.0.0 as saliency_build
+FROM opencv-build:v1.0.0 as saliency_build
 LABEL maintainer="josephburling@gmail.com"
 
 ARG saliency_build_dir=/opt/saliency
@@ -23,9 +23,6 @@ RUN cmake --no-warn-unused-cli -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE -DCMAKE
 RUN cmake --build . --config Release --target install -- -j$(nproc)
 
 WORKDIR $SALIENCY_DIR_ROOT
-
-# docker build . --target saliency_build -t tmp-build:0.0.1
-# docker run -it --rm tmp-build:0.0.1
 
 
 # make runtime environment and copy over libraries and built binaries
@@ -72,10 +69,6 @@ ENV PATH=${SALIENCY_PATH}:$PATH
 # start in an empty directory
 WORKDIR $SALIENCY_PATH/runtime
 
+# show help from saliency program as default option
 ENTRYPOINT ["../bin/saliency", "-alt_exit"]
 CMD ["--help"]
-
-# docker build . -t saliency-app:0.1.0
-# docker run -it --rm --entrypoint /bin/bash saliency-app:0.1.0
-# docker run -e DISPLAY=10.0.0.34:0.0 -p 5000:5000 -p 8888:8888 -it --rm saliency-app:0.1.0
-# docker run --device=/dev/video0:/dev/video0 -v /tmp/.X11-unix:/tmp/.X11-unix -e DISPLAY=$DISPLAY -p 5000:5000 -p 8888:8888 -it --rm saliency-app:0.1.0

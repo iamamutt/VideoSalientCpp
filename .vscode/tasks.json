@@ -62,8 +62,12 @@
                 "save",
                 "-o",
                 "saliency-image.tar",
-                "saliency-app:0.1.0"
+                "saliency-app:v0.1.0"
             ],
+            "linux": {
+                "command": "docker save saliency-app:latest | gzip > saliency-image.tar.gz",
+                "args": []
+            },
             "problemMatcher": []
         },
         {
@@ -73,7 +77,7 @@
             "args": [
                 "load",
                 "-i",
-                "saliency-image.tar"
+                "saliency-image.tar.gz"
             ],
             "problemMatcher": []
         }

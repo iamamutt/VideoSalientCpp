@@ -68,7 +68,7 @@ If you don't want to build from source you can use the docker image to run the p
 2. Check that Docker works from the command line. From a terminal type: `docker --version`.
 3. Obtain the docker image `saliency-image.tar` containing the built saliency program
 4. In a terminal, navigate to the directory containing the docker image and load it with `docker load -i saliency-image.tar`
-5. Run the image by entering the command `docker run -it --rm saliency-app:0.1.0`. You should see the saliency program help documentation.
+5. Run the image by entering the command `docker run -it --rm saliency-app:v0.1.0`. You should see the saliency program help documentation.
 
 ### Configure
 
@@ -136,5 +136,14 @@ Usage: saliency [params]
 ```
 
 <!--
-hidden
+# cd opencv && docker build . -t opencv-build:v1.0.0
+# docker run --rm -it opencv-build:v1.0.0
+
+# docker build . --target saliency_build -t tmp-build:0.0.1
+# docker run -it --rm tmp-build:0.0.1
+
+# docker build . -t saliency-app:v0.1.0
+# docker run -it --rm --entrypoint /bin/bash saliency-app:v0.1.0
+# docker run -e DISPLAY=10.0.0.34:0.0 -p 5000:5000 -p 8888:8888 -it --rm saliency-app:v0.1.0
+# docker run --device=/dev/video0:/dev/video0 -v /tmp/.X11-unix:/tmp/.X11-unix -e DISPLAY=$DISPLAY -p 5000:5000 -p 8888:8888 -it --rm saliency-app:v0.1.0
 -->

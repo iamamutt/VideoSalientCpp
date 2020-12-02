@@ -96,6 +96,3 @@ RUN ldconfig
 RUN rm opencv.zip
 RUN rm -f -r opencv-${OPENCV_VERSION}
 ENV DEBIAN_FRONTEND teletype
-
-# docker build . -t opencv-build:1.0.0
-# docker run --rm -it opencv-build:1.0.0

@@ -34,7 +34,7 @@
 build
 .junk
 .idea
-saliency-image.tar
+saliency-image.tar*
 .vscode/c_cpp_properties.json
 .vscode/settings.json
 saliency/bin/*
