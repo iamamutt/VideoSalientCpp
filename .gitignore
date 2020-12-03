@@ -40,3 +40,4 @@ saliency-image.tar*
 saliency/bin/*
 saliency/share/exports/*
 output
+export
