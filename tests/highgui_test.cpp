@@ -34,7 +34,7 @@ main(int argc, char **argv)
   std::cout << "Testing OpenCV GUI" << std::endl;
 
   try {
-    auto opts            = parse_command_line_args(argc, argv);
+    auto [opts, parser]  = parse_command_line_args(argc, argv);
     auto [device, image] = cap::get_device(opts.device_switch, opts.device_values);
 
     if (image.empty()) {
