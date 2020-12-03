@@ -18,6 +18,7 @@ services:
         source: $USERPROFILE/saliency/share
         target: /home/user/saliency/runtime
     container_name: bottom-up-visual-saliency
+    privileged: true
 # ----------------------------------------------------------
 # Useful docker compose commands:
 #  docker-compose up
