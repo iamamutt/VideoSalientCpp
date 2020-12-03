@@ -22,56 +22,129 @@ Usage: saliency [params]
         -?, -h, --help
                 print this help message
         --alt_exit
-                sets program exit to also allow right-clicking on the "Saliency" window  
+                sets program to allow right-clicking on the "Saliency" window to exit
         --cam
-                usb camera index, use 0 for default
+                usb camera index as input, use 0 for default device
         --debug
                 toggle visualization of feature parameters. --dir output will be disabled
         --dir
-                full path to where root saliency output directory will be created        
+                full path to where the saliency output directory will be created
         --img
-                full path to image file
+                full path to image file as input
         --no_gui
                 turn off displaying any output windows and using OpenCV GUI functionality. Will ignore --debug
         --par
                 full path to the YAML parameters file
         --split
                 output will be saved as a series of images instead of video
+        --start_frame
+                start detection at this value instead of starting at the first frame, default=1
+        --stop_frame
+                stop detection at this value instead of ending at the last frame, default=-1 (end)
         --vid
-                full path to video file
+                full path to video file as input
 ```
 
-Assuming you are in the directory containing the `saliency` program.
+Assuming you are in the directory containing the `saliency` executable program..., e.g., `VideoSalientCpp/saliency/bin`.
 
 ### Using video as input
 
-Point to a video called `my_video.avi`, use your own parameters settings from `my_settings.yml`, and export data to the `exported` folder.
+Point to the sample video named `vtest.avi`, use the parameters settings from `parameters.yml`, and export data to the `exported` folder.
 
-```
-saliency --vid=my_video.avi --par=my_settings.yml --dir=./exported
+```bash
+saliency --vid=../share/samples/vtest.avi --par=../share/parameters.yml --dir=../share/exported
 ```
 
 ### Using an image as input
 
-Export will be a video if `--dir` is specified, even though input is an image. The video will be the length ...
+Export will be a video if `--dir` is specified, even though input is an image. The video will be the number of frames before closing the window, unless `--stop_frame` is specified.
+
+```bash
+saliency --img=../share/samples/racoon.jpg --dir=../share/exported
+```
+
+Instead of a video as the output, frames will be split into images with `--split`.
+
+```bash
+saliency --img=../share/samples/racoon.jpg --dir=../share/exported --split
+```
+
+If you want to use a series of images as input, images must be in the same folder and numbered (see `samples/tennis` as an example). You also must specify this as a video using `--vid`, and enter the numbering format as seen below.
+
+```bash
+saliency --vid=../share/samples/tennis/%05d.jpg
+```
+
 
 ### Using a USB camera device as input
 
+Use the default camera device.
+
+```bash
+saliency --cam=0
+```
+
 ### Using custom saliency model parameters
 
+Specify different saliency parameters  using the `--par` option. If not specified, uses the internal default parameters. Parameters that can be edited are:
+
+```yaml
+# General saliency model parameters
+model:
+   # Max LoG kernel window size. Set to -1 to use ~min(rows, cols)/4
+   max_LoG_size: -1
+   n_LoG_kern: -1
+   gauss_blur_win: -1
+   contrast_factor: 4.
+   central_focus_prop: 6.7000000000000004e-01
+   saliency_thresh: -1.
+   saliency_thresh_mult: 2.
+# List of feature channel parameters
+feature_channels:
+   # Luminance/Color parameters
+   color:
+      colorspace: LAB
+      rescale: 6.
+      filter: 5.0000000000000000e-01
+      weight: 1.
+   # Line orientation parameters
+   lines:
+      # Kernel size for square gabor patches. Set to -1 to use ~min(rows, cols) * .02
+      gabor_win_size: -1
+      n_rotations: 8
+      sigma: 3.5000000000000000e+00
+      lambda: 10.
+      psi: 1.9635000000000000e+00
+      gamma: 6.2500000000000000e-01
+      weight: 1.
+   # Motion flicker parameters
+   flicker:
+      lower_limit: 32.
+      upper_limit: 255.
+      weight: 1.
+   # Optical flow parameters
+   flow:
+      # Size of square flow estimation window. Set to -1 to use ~min(rows, cols) * .125
+      flow_window_size: -1
+      max_num_points: 150
+      min_point_dist: 8.
+      morph_half_win: 3
+      morph_iters: 8
+      weight: 1.
+```
 
 ## Building from source
 
 Download repository contents to your user folder (you can download anywhere but the example below uses the user folder). If you already have git installed, you can do the following in a terminal.
 
-```
+```bash
 cd ~
 git clone https://github.com/iamamutt/VideoSalientCpp.git
 ```
 
 Anytime there are updates to the source code, you can navigate to the `VideoSalientCpp` folder and pull the new changes with:
 
-```
+```bash
 cd ~/VideoSalientCpp
 git pull
 ```
@@ -80,7 +153,7 @@ git pull
 
 You will need some developer tools to build the program, open up the terminal app and run the following:
 
-```
+```bash
 xcode-select --install
 ```
 
@@ -88,14 +161,14 @@ You'll also need Homebrew to grab the rest of the libraries and dependencies: ht
 
 After Homebrew is installed, run:
 
-```
+```bash
 brew update
 brew install cmake opencv ffmpeg
 ```
 
 After the above dependencies are installed, navigate to the repository folder, e.g., if you saved the contents to `~/VideoSalientCpp` then run `cd ~/VideoSalientCpp`. Once in the folder root, run the following to build the `saliency` binary.
 
-```
+```bash
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake --build . --config Release --target install -- -j 4
@@ -104,7 +177,7 @@ cd ..
 
 The compiled binaries will be in `./saliency/bin`. Test using the samples data:
 
-```
+```bash
 cd saliency
 ./bin/saliency --vid=share/samples/vtest.avi
 ```
@@ -159,7 +232,7 @@ Open up the file `docker-compose.yml` in any text editor. The fields that need t
 
 After configuring `docker-compose.yml`, run the `saliency` service by entering this in the terminal:
 
-```
+```bash
 docker-compose run --rm saliency
 ```
 
@@ -179,7 +252,7 @@ You should now be able to run the program and see the output windows.
 ##### OSX
 
 
-```
+```bash
 brew install socat
 socat TCP-LISTEN:6000,reuseaddr,fork UNIX-CLIENT:\"$DISPLAY\"
 brew install xquartz
@@ -188,7 +261,7 @@ open -a Xquartz
 
 XQuartz > preferences > Security > allow connections from network clients
 
-```
+```bash
 ifconfig en0
 docker run -e DISPLAY=10.0.0.134:0 --privileged saliency-app:v0.1.0
 ```
