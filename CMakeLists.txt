@@ -18,9 +18,11 @@ include_directories(${OpenCV_INCLUDE_DIRS} ${PROJECT_SOURCE_DIR})
 
 add_executable(${EXEC_NAME} main.cpp)
 add_executable(highgui_test tests/highgui_test.cpp)
+add_executable(write_default_params tests/write_default_params.cpp)
 
 target_link_libraries(${EXEC_NAME} ${OpenCV_LIBS})
 target_link_libraries(highgui_test ${OpenCV_LIBS})
+target_link_libraries(write_default_params ${OpenCV_LIBS})
 
 # try to find FFMPEG opencv library for video capture on windows
 if (WIN32)
@@ -41,4 +43,4 @@ if (WIN32)
     endif ()
 endif ()
 
-install(TARGETS ${EXEC_NAME} highgui_test RUNTIME DESTINATION "${CMAKE_SOURCE_DIR}/saliency/bin")
+install(TARGETS ${EXEC_NAME} highgui_test write_default_params RUNTIME DESTINATION "${CMAKE_SOURCE_DIR}/saliency/bin")
