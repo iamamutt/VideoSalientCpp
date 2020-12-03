@@ -166,7 +166,6 @@ std::string
 make_dir(const std::string &proposed_path)
 {
   std::filesystem::path path(normalize_path(proposed_path));
-  std::cout << path << std::endl;
   try {
     std::filesystem::create_directories(path);
   } catch (const std::filesystem::filesystem_error &err) {

@@ -3,8 +3,8 @@
 
 #include "command_line.h"
 #include "timing.h"
-#include <future>
 #include <fstream>
+#include <future>
 
 using Strings       = std::vector<std::string>;
 using MatVec        = std::vector<cv::Mat>;
@@ -21,8 +21,8 @@ struct Images
 
 struct ImageSet
 {
-  Images prev;    // previous image set
-  Images curr;    // current image set
+  Images prev;  // previous image set
+  Images curr;  // current image set
 };
 
 struct ImageDims
@@ -59,14 +59,15 @@ struct GridLayouts
   DisplayData features;  // window that displays features after activation
 };
 
-struct ProgramStatus {
-  bool start_detection = true;
-  bool stop_detection = false;
-  bool static_image = false;
-  bool frame_was_captured = true;
+struct ProgramStatus
+{
+  bool start_detection      = true;
+  bool stop_detection       = false;
+  bool static_image         = false;
+  bool frame_was_captured   = true;
   bool right_mouse_btn_down = false;
-  bool end_program = false;
-  bool export_enabled = false;
+  bool end_program          = false;
+  bool export_enabled       = false;
 };
 
 struct Source
@@ -99,14 +100,19 @@ struct FeatureMaps
   cv::Mat flow;
 };
 
-struct SaliencyMap {
+struct SaliencyMap
+{
   cv::Mat map;
   cv::Mat image;
-  cv::Point2i point;
+  cv::Mat map_8bit;
   double threshold;
-  double value;
-  std::vector<std::vector<cv::Point2i>> contours;
   std::ofstream file;
+  std::vector<std::vector<cv::Point2i>> contours;
+  std::vector<cv::Point> salient_coords;
+  std::vector<double> salient_values;
+  cv::Scalar black{0, 0, 0};        // color of salient point
+  cv::Scalar magenta{255, 0, 255};  // color of salient contour
+  cv::Scalar cyan{255, 255, 0};     // color of other salient regions above threshold
 };
 
 #endif  // SALIENCY_DATA_STRUCTURES_H

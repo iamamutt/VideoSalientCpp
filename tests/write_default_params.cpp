@@ -12,8 +12,8 @@ int
 main(int argc, char **argv)
 {
   auto [opts, parser] = parse_command_line_args(argc, argv);
-  if (opts.out_dir.empty()) opts.out_dir = ".";
-  auto pars_file = normalize_path(opts.out_dir, "saliency/share/parameters.yml");
+  if (opts.out_dir.empty()) opts.out_dir = normalize_path(opts.bin_path, "../share");
+  auto pars_file = normalize_path(opts.out_dir, "parameters.yml");
   std::cout << "Writing default parameters to: " << pars_file << std::endl;
   params::parameter_defaults(pars_file);
   exit(0);

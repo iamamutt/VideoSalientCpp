@@ -200,68 +200,78 @@ detect(const Source &source,
   saliency_map.map = sal_map;
 }
 
-cv::Point
-find_salient_point(const cv::Mat &saliency_map, double threshold)
+void
+find_salient_contours(SaliencyMap &map_data, const cv::Mat &dilate_kernel)
 {
-  cv::Mat img_copy = saliency_map.clone();
-  imtools::clip(img_copy, threshold / 255.);
-  cv::boxFilter(img_copy, img_copy, -1, cv::Size(15, 15));
-
-  double salient_value;
-  cv::Point salient_point;
-  cv::minMaxLoc(img_copy, nullptr, &salient_value, nullptr, &salient_point);
-
-  return salient_point;
+  cv::Mat binary_img;
+  cv::threshold(map_data.map_8bit, binary_img, map_data.threshold, 255, cv::THRESH_BINARY);
+  cv::dilate(binary_img, binary_img, dilate_kernel, cv::Point(-1, -1), 2);
+  map_data.contours.clear();
+  cv::findContours(binary_img, map_data.contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 }
 
-std::vector<std::vector<cv::Point>>
-find_salient_contours(const cv::Mat &I8UC1, double threshold, const cv::Mat &kern)
+void
+find_salient_points(SaliencyMap &map_data)
 {
-  cv::Mat binary_img = I8UC1.clone();
-  cv::threshold(binary_img, binary_img, threshold, 255, cv::THRESH_BINARY);
-  cv::dilate(binary_img, binary_img, kern, cv::Point(-1, -1), 3);
-  std::vector<std::vector<cv::Point>> contours;
-  cv::findContours(binary_img, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-  return contours;
+  cv::Mat peaks_smoothed;
+  cv::boxFilter(map_data.map, peaks_smoothed, -1, cv::Size(15, 15));
+
+  map_data.salient_coords.clear();
+  map_data.salient_values.clear();
+
+  double total_max = 0;
+  int which_max    = -1;
+  for (int i = 0; i < map_data.contours.size(); i++) {
+    auto mask = imtools::make_black(map_data.map, CV_8UC1);
+    cv::drawContours(mask, map_data.contours, i, cv::Scalar_<uchar>(1), -1);
+
+    double max_val;
+    cv::Point max_loc;
+    cv::minMaxLoc(peaks_smoothed, nullptr, &max_val, nullptr, &max_loc, mask);
+
+    if (max_val > total_max) {
+      total_max = max_val;
+      which_max = i;
+    }
+    map_data.salient_values.push_back(max_val);
+    map_data.salient_coords.push_back(max_loc);
+  }
+
+  // move max saliency to front
+  if (which_max > 0) {
+    std::swap(map_data.contours[0], map_data.contours[which_max]);
+    std::swap(map_data.salient_values[0], map_data.salient_values[which_max]);
+    std::swap(map_data.salient_coords[0], map_data.salient_coords[which_max]);
+  }
 }
 
 // TODO: save contours, point, point value to YAML file
 void
-analyze(SaliencyMap &saliency_map, const ModelParameters &pars)
+analyze(SaliencyMap &map_data, const ModelParameters &pars)
 {
-  cv::Mat gray_img;
-  imtools::convert_32FC1U_to_8UC1(saliency_map.map, gray_img);
+  imtools::convert_32FC1U_to_8UC1(map_data.map, map_data.map_8bit);
+  map_data.image = imtools::colorize_32FC1U(map_data.map);
 
   // find lower level saliency cutoff value
-  saliency_map.threshold = pars.saliency_thresh <= 0 ?
-                             imtools::get_otsu_thresh_value(gray_img) * pars.saliency_thresh_mult :
-                             pars.saliency_thresh;
+  map_data.threshold = pars.saliency_thresh <= 0 ?
+                         imtools::get_otsu_thresh_value(map_data.map_8bit) * pars.saliency_thresh_mult :
+                         pars.saliency_thresh;
 
-  // find salient point and contours using threshold
-  saliency_map.contours = find_salient_contours(gray_img, saliency_map.threshold, pars.dilation_kernel);
-  saliency_map.point    = find_salient_point(saliency_map.map, saliency_map.threshold);
-  saliency_map.value    = saliency_map.map.at<float>(saliency_map.point) * 255.f;
+  // find salient contours using threshold
+  find_salient_contours(map_data, pars.dilation_kernel);
+  if (map_data.contours.empty()) return;
 
-  // start making final saliency output image
-  saliency_map.image = imtools::colorize_32FC1U(saliency_map.map);
-  if (saliency_map.point.x == 0 && saliency_map.point.y == 0) return;
+  // find salient points from contours
+  find_salient_points(map_data);
 
-  cv::Scalar white(255, 255, 255);  // salient point
-  cv::Scalar magenta(255, 0, 255);  // salient contour
-  cv::Scalar cyan(255, 255, 0);     // other salient regions above threshold
-
-  // draw salient contours
-  for (size_t i = 0; i < saliency_map.contours.size(); i++) {
-    auto contains_point = cv::pointPolygonTest(saliency_map.contours[i], saliency_map.point, false);
-    if (contains_point >= 0) {
-      cv::drawContours(saliency_map.image, saliency_map.contours, static_cast<int>(i), magenta, 2);
-    } else {
-      cv::drawContours(saliency_map.image, saliency_map.contours, static_cast<int>(i), cyan, 2);
-    }
+  // draw salient contours on final output image
+  cv::drawContours(map_data.image, map_data.contours, 0, map_data.magenta, 2, cv::LINE_AA);
+  for (int i = 1; i < map_data.contours.size(); i++) {
+    cv::drawContours(map_data.image, map_data.contours, i, map_data.cyan, 2, cv::LINE_AA);
   }
 
   // draw salient point as circle
-  cv::circle(saliency_map.image, saliency_map.point, 5, white, -1);
+  cv::circle(map_data.image, map_data.salient_coords[0], 6, map_data.black, -1, cv::LINE_AA);
 }
 
 // *******************************************************

@@ -36,13 +36,13 @@ create_trackbars(const CmdLineOpts &opts, Parameters *pars, AllTrackbarPositions
 }
 
 void
-init_frame_start_stop_statuses(Source &src)
+init_frame_start_stop_status(Source &src)
 {
   if (src.status.static_image) {
     // override any start_frame settings if input is an image
     src.opts.start_frame = 0;
-    if (src.opts.no_gui) {
-      // automatically end after 15 frames
+    if (src.opts.no_gui && src.opts.stop_frame == -1) {
+      // automatically end after 15 frames, if stop_frame not set
       src.opts.stop_frame = 15;
     }
   }
@@ -63,7 +63,7 @@ setup_saliency_data(const Source &src)
   if (src.status.export_enabled) {
     auto csv_file       = normalize_path(src.opts.out_dir, "saliency_data.csv");
     saliency.file       = std::ofstream(csv_file);
-    Strings header_cols = {"frame", "pt_x", "pt_y", "salient_value", "contour_thresh", "n_contours"};
+    Strings header_cols = {"frame", "contour_thresh", "contour_num", "pt_x", "pt_y", "salient_value"};
     write_csv_header(saliency.file, header_cols);
     saliency.file << std::fixed << std::setprecision(5);
   }
@@ -205,7 +205,9 @@ auto
 initialize(int argc, const char *const *argv)
 {
   auto [opts, parser] = parse_command_line_args(argc, argv);
-  show_help_then_exit(opts, parser);
+  check_for_help(opts, parser);
+  opts.bin_path = normalize_path(opts.bin_path);
+  std::cout << "Running saliency at: " << opts.bin_path << std::endl;
 
   auto [capture_device, first_image] = cap::get_device(opts.device_switch, opts.device_values);
 
@@ -220,7 +222,7 @@ initialize(int argc, const char *const *argv)
   src.status.export_enabled = !opts.debug && !opts.out_dir.empty();
   src.status.static_image   = src.opts.device_switch == DeviceSwitch::IMAGE_FILE;
   setup_video_writer(src);
-  init_frame_start_stop_statuses(src);
+  init_frame_start_stop_status(src);
 
   Parameters pars = params::initialize_parameters(src.opts.pars_file, src.dim.size, src.status.static_image);
 

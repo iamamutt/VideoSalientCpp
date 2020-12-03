@@ -16,8 +16,15 @@ image_to_file(const std::string &filename, const cv::Mat &image)
 static void
 write_saliency_file_data(SaliencyMap &data, const int &frame)
 {
-  data.file << frame << "," << data.point.x << "," << data.point.y << "," << data.value << "," << data.threshold << ","
-            << data.contours.size() << "\n";
+  for (int i = 0; i < data.contours.size(); ++i) {
+    data.file << frame << ","                     // frame
+              << data.threshold / 255. << ","     // contour_thresh
+              << i + 1 << ","                     // contour_num
+              << data.salient_coords[i].x << ","  // pt_x
+              << data.salient_coords[i].y << ","  // pt_y
+              << data.salient_values[i] << "\n";  // salient_value
+  }
+
   data.file << std::flush;
 };
 

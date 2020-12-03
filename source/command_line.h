@@ -31,6 +31,7 @@ struct CmdLineOpts
   std::string pars_file;
   std::string out_dir;
   std::string out_file;
+  std::string bin_path;
   DeviceSwitch device_switch = DeviceSwitch::NONE;
   DeviceValue device_values;
 };
@@ -44,15 +45,17 @@ make_cmd_line_parser(int argc, const char *const *argv)
 
   const std::string keys =
     "{h help ?    | | print this help message                                                                       }"
-    "{img         | | full path to image file                                                                       }"
-    "{vid         | | full path to video file                                                                       }"
-    "{cam         | | usb camera index, use 0 for default                                                           }"
-    "{dir         | | full path to where root saliency output directory will be created                             }"
+    "{img         | | full path to image file as input                                                              }"
+    "{vid         | | full path to video file as input                                                              }"
+    "{cam         | | usb camera index as input, use 0 for default device                                           }"
+    "{dir         | | full path to where the saliency output directory will be created                              }"
     "{par         | | full path to the YAML parameters file                                                         }"
     "{split       | | output will be saved as a series of images instead of video                                   }"
     "{debug       | | toggle visualization of feature parameters. --dir output will be disabled                     }"
     "{no_gui      | | turn off displaying any output windows and using OpenCV GUI functionality. Will ignore --debug}"
-    "{alt_exit    | | sets program exit to also allow right-clicking on the \"Saliency\" window                     }";
+    "{alt_exit    | | sets program to allow right-clicking on the \"Saliency\" window to exit                       }"
+    "{start_frame | | start detection at this value instead of starting at the first frame, default=1               }"
+    "{stop_frame  | | stop detection at this value instead of ending at the last frame, default=-1 (end)            }";
 
   cv::CommandLineParser parser(argc, argv, keys);
   parser.about(about);
@@ -60,7 +63,7 @@ make_cmd_line_parser(int argc, const char *const *argv)
 }
 
 void
-show_help_then_exit(const CmdLineOpts &opts, const cv::CommandLineParser &parser)
+check_for_help(const CmdLineOpts &opts, const cv::CommandLineParser &parser)
 {
   if (opts.device_switch != DeviceSwitch::NONE) return;
   // no input option / help
@@ -78,12 +81,17 @@ parse_command_line_args(int argc, const char *const *argv)
   }
 
   CmdLineOpts opts;
+
+  opts.bin_path = parser.getPathToApplication();
+
   if (parser.has("dir")) opts.out_dir = parser.get<std::string>("dir");
   if (parser.has("par")) opts.pars_file = parser.get<std::string>("par");
   if (parser.has("split")) opts.split_output = parser.get<bool>("split");
   if (parser.has("debug")) opts.debug = parser.get<bool>("debug");
   if (parser.has("no_gui")) opts.no_gui = parser.get<bool>("no_gui");
   if (parser.has("alt_exit")) opts.right_click_esc = parser.get<bool>("alt_exit");
+  if (parser.has("start_frame")) opts.start_frame = parser.get<int>("start_frame");
+  if (parser.has("stop_frame")) opts.stop_frame = parser.get<int>("stop_frame");
 
   if (opts.no_gui && opts.out_dir.empty()) {
     parser.printMessage();
