@@ -19,7 +19,7 @@ struct Point
 // main data object for optical flow
 struct Parameters
 {
-  bool toggle = true;
+  bool toggled = true;
   float weight;                     // weight applied to all pixels in each output image
   int max_n_pts;                    // maximum number of allotted points
   double min_pt_dist;               // minimum distance between new points/features
@@ -218,7 +218,7 @@ MatVec
 detect(const cv::Mat &prev_8UC1, const cv::Mat &curr_8UC1, Parameters &pars)
 {
   MatVec flows;
-  if (!pars.toggle) return flows;
+  if (!pars.toggled) return flows;
   add_more_points(prev_8UC1, pars);
   cv::calcOpticalFlowPyrLK(prev_8UC1, curr_8UC1, pars.p0_pts, pars.p1_pts, pars.pt_status, pars.pt_error,
                            pars.lk_win_size, 3, pars.term_crit, cv::OPTFLOW_LK_GET_MIN_EIGENVALS, 1e-3);
@@ -297,7 +297,7 @@ namespace debug {
   void
   create_trackbar(flow::debug::TrackbarPositions *notches, flow::Parameters *pars)
   {
-    if (!pars->toggle) return;
+    if (!pars->toggled) return;
     cv::namedWindow(pars->debug_window_name);
 
     cv::createTrackbar("Win Size", pars->debug_window_name, &notches->lk_win_size, 50, &callback_lk_win, pars);
@@ -350,7 +350,7 @@ namespace debug {
   visualize(const MatVec &flow_fields, const flow::Parameters &pars, const cv::Size &resize, const DisplayData &disp)
   {
     flow_fields.size();
-    if (flow_fields.empty() || !pars.toggle) return;
+    if (flow_fields.empty() || !pars.toggled) return;
 
     // copy grayscale flow images to color images
     MatVec colorized_flow;

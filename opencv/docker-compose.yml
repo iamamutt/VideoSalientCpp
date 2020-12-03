@@ -2,7 +2,7 @@ version: "3.6"
 
 services:
   OpenCV:
-    image: opencv-build:1.0.0
+    image: opencv-build:v1.0.0
     build:
       context: .
       dockerfile: ./Dockerfile

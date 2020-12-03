@@ -55,6 +55,19 @@
             "problemMatcher": []
         },
         {
+            "label": "Run Parameters Make",
+            "type": "shell",
+            "command": "./bin/write_default_params",
+            "windows": {
+                "command": "${workspaceFolder}/saliency/bin/write_default_params.exe"
+            },
+            "args": [],
+            "options": {
+                "cwd": "${workspaceFolder}/saliency"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "Save Docker Image",
             "type": "shell",
             "command": "docker",

@@ -39,6 +39,8 @@ struct ModelParameters
   double contrast_factor;
   double central_focus_prop;
   double saliency_thresh;
+  double saliency_thresh_mult;
+
   std::string debug_window_name = "FeatureMaps";
   bool toggle                   = true;
 
@@ -55,13 +57,15 @@ struct ModelParameters
                            int _gauss_blur_win        = -1,
                            double _contrast_factor    = 4,
                            double _central_focus_prop = .67,
-                           double _saliency_thresh    = -1)
+                           double _saliency_thresh    = -1,
+                           double _saliency_thresh_mult    = 2)
     : max_LoG_size(_max_LoG_size),
       n_LoG_kern(_n_LoG_kern),
       gauss_blur_win(_gauss_blur_win),
       contrast_factor(_contrast_factor),
       central_focus_prop(_central_focus_prop),
-      saliency_thresh(_saliency_thresh){};
+      saliency_thresh(_saliency_thresh),
+      saliency_thresh_mult(_saliency_thresh_mult){};
 
   // construct size-dependent objects and update default values
   explicit ModelParameters(const cv::Size &dims, ModelParameters pars = ModelParameters())
@@ -96,8 +100,7 @@ struct Parameters
 {
   ModelParameters model;
   ChannelParameters chan;
-  float toggle_adj     = 1;
-  bool rbutton_pressed = false;
+  float toggle_adj = 1;
 
   Parameters() = default;
   explicit Parameters(const cv::Size &dims) : model(dims), chan(dims) {}
@@ -143,7 +146,8 @@ read_model_parameters(cv::FileStorage &fs, const cv::Size &dims)
                             get_node_default<int>(pars_node["gauss_blur_win"], -1),
                             get_node_default<int>(pars_node["contrast_factor"], pars.contrast_factor),
                             get_node_default<double>(pars_node["central_focus_prop"], pars.central_focus_prop),
-                            get_node_default<double>(pars_node["saliency_thresh"], pars.saliency_thresh));
+                            get_node_default<double>(pars_node["saliency_thresh"], pars.saliency_thresh),
+                            get_node_default<double>(pars_node["saliency_thresh_mult"], pars.saliency_thresh_mult));
 
   return ModelParameters(dims, user_pars);
 }
@@ -218,6 +222,7 @@ write_model_parameters(cv::FileStorage &fs, const ModelParameters &pars)
   fs << "contrast_factor" << pars.contrast_factor;
   fs << "central_focus_prop" << pars.central_focus_prop;
   fs << "saliency_thresh" << pars.saliency_thresh;
+  fs << "saliency_thresh_mult" << pars.saliency_thresh_mult;
   fs << "}";
 }
 
@@ -282,41 +287,52 @@ open_yaml_reader(const std::string &yaml_file)
 }
 
 void
-update_pars_weights(Parameters &pars)
+update_pars_weights(Parameters &pars, bool static_image)
 {
   float n_final_maps = 5;  // number of slots in FeatureMaps
   float n_present    = n_final_maps;
 
+  if (static_image) {
+    // turn off these channels for static images
+    pars.chan.flicker.weight = 0.f;
+    pars.chan.flow.weight    = 0.f;
+  }
+
   if (pars.chan.color.weight == 0) {
-    pars.chan.color.toggle = false;
+    pars.chan.color.toggled = false;
     n_present -= 2.f;
   }
   if (pars.chan.lines.weight == 0) {
-    pars.chan.lines.toggle = false;
+    pars.chan.lines.toggled = false;
     n_present--;
   }
   if (pars.chan.flicker.weight == 0) {
-    pars.chan.flicker.toggle = false;
+    pars.chan.flicker.toggled = false;
     n_present--;
   }
   if (pars.chan.flow.weight == 0) {
-    pars.chan.flow.toggle = false;
+    pars.chan.flow.toggled = false;
     n_present--;
   }
   pars.toggle_adj = n_final_maps / n_present;
 }
 
 Parameters
-initialize_parameters(const std::string &yaml_file, const cv::Size &dims)
+initialize_parameters(const std::string &yaml_file, const cv::Size &dims, bool is_static)
 {
-  // return default parameters based on image size
-  if (yaml_file.empty()) return Parameters(dims);
+  Parameters pars;
 
-  // return user specified parameters
-  auto fs = open_yaml_reader(yaml_file);
-  Parameters pars(read_model_parameters(fs, dims), read_channel_parameters(fs, dims));
-  update_pars_weights(pars);
-  fs.release();
+  if (yaml_file.empty()) {
+    // return default parameters based on image size
+    pars = Parameters(dims);
+  } else {
+    // return user specified parameters
+    auto fs = open_yaml_reader(yaml_file);
+    pars    = Parameters(read_model_parameters(fs, dims), read_channel_parameters(fs, dims));
+    fs.release();
+  }
+
+  update_pars_weights(pars, is_static);
   return pars;
 }
 
@@ -330,7 +346,7 @@ write_parameters(const std::string &yaml_file, const Parameters &pars)
 }
 
 void
-parameter_defaults(const std::string &yaml_file = "saliency/share/parameters.yml")
+parameter_defaults(const std::string &yaml_file)
 {
   Parameters pars;
   // set to empty so that sizes can be determined by image

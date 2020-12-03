@@ -4,6 +4,7 @@
 #include "command_line.h"
 #include "timing.h"
 #include <future>
+#include <fstream>
 
 using Strings       = std::vector<std::string>;
 using MatVec        = std::vector<cv::Mat>;
@@ -58,6 +59,16 @@ struct GridLayouts
   DisplayData features;  // window that displays features after activation
 };
 
+struct ProgramStatus {
+  bool start_detection = true;
+  bool stop_detection = false;
+  bool static_image = false;
+  bool frame_was_captured = true;
+  bool right_mouse_btn_down = false;
+  bool end_program = false;
+  bool export_enabled = false;
+};
+
 struct Source
 {
   cv::VideoCapture cap;
@@ -67,6 +78,7 @@ struct Source
   ImageDims dim;
   CmdLineOpts opts;
   GridLayouts layouts;
+  ProgramStatus status;
 };
 
 struct ChannelImages
@@ -85,6 +97,16 @@ struct FeatureMaps
   cv::Mat lines;
   cv::Mat flicker;
   cv::Mat flow;
+};
+
+struct SaliencyMap {
+  cv::Mat map;
+  cv::Mat image;
+  cv::Point2i point;
+  double threshold;
+  double value;
+  std::vector<std::vector<cv::Point2i>> contours;
+  std::ofstream file;
 };
 
 #endif  // SALIENCY_DATA_STRUCTURES_H

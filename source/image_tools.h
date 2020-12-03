@@ -34,14 +34,13 @@ make_black(const cv::Size &dims, int type = CV_32FC1)
 
 // convert grayscale image to bgr
 cv::Mat
-gray_to_bgr(const cv::Mat &I8UC1)
+gray_to_bgr(const cv::Mat &IC1, int type = CV_8UC3)
 {
-  // assumes grey is on 0-255 scale
-  cv::Mat gray_copy = I8UC1.clone();
+  cv::Mat gray_copy = IC1.clone();
   cv::Mat layers[3] = {gray_copy, gray_copy, gray_copy};
   cv::Mat bgr;
   cv::merge(layers, 3, bgr);
-  bgr.convertTo(bgr, CV_8UC3);
+  bgr.convertTo(bgr, type);
   return bgr;
 }
 
@@ -664,6 +663,24 @@ get_test_img(int rows = 5, int cols = 5, double start = 0., double stop = 255.)
   return matrix;
 }
 
+cv::Mat
+get_noise_image(int rows = 5, int cols = 5)
+{
+  cv::Size sz(cols, rows);
+  auto img = make_black(sz, CV_32FC3);
+  for (int y = 0; y < img.rows; y++) {
+    for (int x = 0; x < img.cols; x++) {
+      float b = cv::theRNG().uniform(0.f, 1.f);
+      float g = cv::theRNG().uniform(0.f, 1.f);
+      float r = cv::theRNG().uniform(0.f, 1.f);
+      cv::Vec3f color(b, g, r);
+      img.at<cv::Vec3f>(y, x) = color;
+    }
+  }
+  img.convertTo(img, CV_8UC3, 255);
+  return img;
+}
+
 DisplayData
 setup_image_layout(const MatVec &mat_vec,
                    int cols,
@@ -886,12 +903,11 @@ win_opened(int key,
     return non_stopping_key && !*button_pressed;
   }
 
-  if (check_name.empty()) {
+  if (!check_name.empty()) {
     auto visible = static_cast<int>(cv::getWindowProperty(check_name, cv::WND_PROP_VISIBLE));
     return non_stopping_key && visible > 0;
   }
 
-  //  std::cout << "status: " << visible << "key_code:" << key_code << std::endl;
   return non_stopping_key;
 }
 }  // namespace imtools

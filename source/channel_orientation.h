@@ -41,18 +41,18 @@ gabor_kernels(const GaborParams &gabor_pars)
 
 struct Parameters
 {
-  bool toggle = true;
+  bool toggled = true;
   float weight;
   GaborParams gabor_pars;
   MatVec kernels;
   std::string debug_window_name = "LinesChannel";
 
-  explicit Parameters(int gabor_win_size = 11,
+  explicit Parameters(int gabor_win_size = 15,
                       int n_rotations    = 8,
-                      double sigma       = 2.375,
-                      double lambda      = 8.375,
+                      double sigma       = 3.5,
+                      double lambda      = 10,
                       double psi         = 1.9635,
-                      double gamma       = 0.5,
+                      double gamma       = 0.625,
                       float _weight      = 1)
     : gabor_pars(n_rotations, gabor_win_size, sigma, lambda, psi, gamma), weight(_weight)
   {
@@ -64,7 +64,7 @@ MatVec
 detect(const cv::Mat &curr_32FC1_unit, const Parameters &pars)
 {
   MatVec line_images;
-  if (!pars.toggle) return line_images;
+  if (!pars.toggled) return line_images;
   line_images = imtools::convolve_all(curr_32FC1_unit, pars.kernels);
   for (auto &&img : line_images) img = imtools::logistic(img, 1, 10, .2);
   if (pars.weight == 1) return line_images;
@@ -143,7 +143,7 @@ namespace debug {
   void
   create_trackbar(lines::debug::TrackbarPositions *notches, lines::Parameters *pars)
   {
-    if (!pars->toggle) return;
+    if (!pars->toggled) return;
     cv::namedWindow(pars->debug_window_name);
 
     cv::createTrackbar("Win Size", pars->debug_window_name, &notches->size, 50, &callback_size, pars);
@@ -152,7 +152,7 @@ namespace debug {
     cv::createTrackbar("Sigma", pars->debug_window_name, &notches->sigma, 56, &callback_sigma, pars);
     cv::setTrackbarMin("Sigma", pars->debug_window_name, 1);
 
-    cv::createTrackbar("Lambda", pars->debug_window_name, &notches->lambda, 96, &callback_lambda, pars);
+    cv::createTrackbar("Lambda", pars->debug_window_name, &notches->lambda, 120, &callback_lambda, pars);
     cv::setTrackbarMin("Lambda", pars->debug_window_name, 1);
 
     cv::createTrackbar("Psi", pars->debug_window_name, &notches->psi, 16, &callback_psi, pars);
@@ -170,8 +170,8 @@ namespace debug {
       std::stringstream sigma;
       std::stringstream theta;
       std::stringstream lambda;
-      std::stringstream gamma;
       std::stringstream psi;
+      std::stringstream gamma;
 
       sigma.precision(5);
       theta.precision(5);
@@ -183,10 +183,10 @@ namespace debug {
       sigma << "sigma: " << gabor_pars.sigma;
       theta << "theta: " << gabor_pars.theta[n];
       lambda << "lambda: " << gabor_pars.lambda;
-      gamma << "gamma: " << gabor_pars.gamma;
       psi << "psi: " << gabor_pars.psi;
+      gamma << "gamma: " << gabor_pars.gamma;
 
-      Strings text_pars = {size.str(), sigma.str(), theta.str(), lambda.str(), gamma.str(), psi.str()};
+      Strings text_pars = {size.str(), sigma.str(), theta.str(), lambda.str(), psi.str(), gamma.str()};
 
       per_img.emplace_back(text_pars);
     };
@@ -221,7 +221,7 @@ namespace debug {
             const cv::Size &resize,
             const DisplayData &disp)
   {
-    if (filtered_images.empty() || !pars.toggle) return;
+    if (filtered_images.empty() || !pars.toggled) return;
     auto o_imgs     = orientations_to_images(filtered_images);
     auto k_imgs     = kernels_to_images(pars.kernels);
     auto param_text = texify_pars(pars.gabor_pars);

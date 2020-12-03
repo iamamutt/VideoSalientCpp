@@ -9,23 +9,24 @@ model:
    contrast_factor: 4.
    central_focus_prop: 6.7000000000000004e-01
    saliency_thresh: -1.
+   saliency_thresh_mult: 2.
 # List of feature channel parameters
 feature_channels:
    # Luminance/Color parameters
    color:
       colorspace: LAB
-      rescale: 33.
-      filter: 1.7000000178813934e-01
+      rescale: 6.
+      filter: 5.0000000000000000e-01
       weight: 1.
    # Line orientation parameters
    lines:
       # Kernel size for square gabor patches. Set to -1 to use ~min(rows, cols) * .02
       gabor_win_size: -1
       n_rotations: 8
-      sigma: 2.3750000000000000e+00
-      lambda: 8.3750000000000000e+00
+      sigma: 3.5000000000000000e+00
+      lambda: 10.
       psi: 1.9635000000000000e+00
-      gamma: 5.0000000000000000e-01
+      gamma: 6.2500000000000000e-01
       weight: 1.
    # Motion flicker parameters
    flicker:

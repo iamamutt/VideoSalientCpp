@@ -2,6 +2,7 @@
 #define SALIENCY_TOOLS_H
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <numeric>
 #include <utility>
@@ -143,6 +144,14 @@ sigma_prop_k(int k, double p)
 }
 
 std::string
+replace_file_ext(const std::string &file, const std::string &ext)
+{
+  std::filesystem::path path(file);
+  path.replace_extension(ext);
+  return path.generic_string();
+}
+
+std::string
 normalize_path(const std::string &parent, const std::string &stem = "")
 {
   std::filesystem::path path(parent);
@@ -164,7 +173,20 @@ make_dir(const std::string &proposed_path)
     throw err;
   }
   std::cout << "directory created at: " << path << std::endl;
-  return path.string();
+  return path.generic_string();
+};
+
+void
+write_csv_header(std::ofstream &file, const std::vector<std::string> &name)
+{
+  auto n = name.size();
+  for (int i = 0; i < n; ++i) {
+    file << name[i];
+    if (i < n - 1) {
+      file << ",";
+    }
+  }
+  file << "\n";
 };
 
 #endif  // SALIENCY_TOOLS_H

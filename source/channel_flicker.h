@@ -10,7 +10,7 @@ struct Parameters
   float lower_lim;
   float upper_lim;
   float weight;
-  bool toggle = true;
+  bool toggled = true;
   cv::Mat morph_shape;
   std::string debug_window_name = "FlickerChannel";
 
@@ -25,7 +25,7 @@ MatVec
 detect(const cv::Mat &prev_32FC1_unit, const cv::Mat &curr_32FC1_unit, const Parameters &pars)
 {
   MatVec flicker;
-  if (!pars.toggle) return flicker;
+  if (!pars.toggled) return flicker;
   cv::Mat flicker_image;
   cv::absdiff(curr_32FC1_unit, prev_32FC1_unit, flicker_image);
   imtools::clip(flicker_image, pars.lower_lim, pars.upper_lim);
@@ -76,7 +76,7 @@ namespace debug {
   void
   create_trackbar(flick::debug::TrackbarPositions *notches, flick::Parameters *pars)
   {
-    if (!pars->toggle) return;
+    if (!pars->toggled) return;
     cv::namedWindow(pars->debug_window_name);
     cv::createTrackbar("Min Thresh", pars->debug_window_name, &notches->lower_lim, 255, &callback_min_thresh, pars);
     cv::createTrackbar("Max Thresh", pars->debug_window_name, &notches->upper_lim, 255, &callback_max_thresh, pars);
@@ -99,7 +99,7 @@ namespace debug {
   void
   visualize(const MatVec &flick_img, const flick::Parameters &pars, const cv::Size &resize, const DisplayData &disp)
   {
-    if (flick_img.empty() || !pars.toggle) return;
+    if (flick_img.empty() || !pars.toggled) return;
     MatVec colorized_flick = {imtools::colorize_32FC1U(flick_img[0])};
     colorized_flick[0]     = imtools::imresize(colorized_flick[0], resize);
     imtools::add_text(colorized_flick[0], texify_pars(pars));

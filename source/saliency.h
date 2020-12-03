@@ -73,7 +73,7 @@ extract_color(const ImageSet &images, Parameters &pars, ChannelImages &sep_chan_
   if (sep_chan_imgs.color.empty()) return;
   auto color     = center_surround_activation(sep_chan_imgs.color, pars.model.kernels_LoG, no_async);
   maps.luminance = color[0].clone();
-  maps.color     = imtools::sum_and_scale(slice(color, 1, 2));
+  maps.color     = imtools::sum_images(slice(color, 1, 2));
 
   // adjust scale for missing feature maps
   if (pars.toggle_adj != 1.f) {
@@ -175,31 +175,35 @@ extract_saliency(const FeatureMaps &feature_maps, const cv::Mat &fallback)
   return saliency_image;
 }
 
-cv::Mat
-detect(const Source &source, Parameters &pars, ChannelImages &sep_chan_imgs, FeatureMaps &feature_maps)
+void
+detect(const Source &source,
+       Parameters &pars,
+       ChannelImages &sep_chan_imgs,
+       FeatureMaps &feature_maps,
+       SaliencyMap &saliency_map)
 {
   // center-surround activation on all feature channel vectors with images
   channel_extraction_activation(source.img, pars, sep_chan_imgs, feature_maps, source.opts.no_async);
 
   // extract a saliency image from set of feature maps
-  auto saliency_image = extract_saliency(feature_maps, pars.model.blank_image);
+  auto sal_map = extract_saliency(feature_maps, pars.model.blank_image);
 
   // blur together salient parts
-  imtools::convolve(saliency_image, pars.model.gauss_kern);
+  imtools::convolve(sal_map, pars.model.gauss_kern);
 
   // apply central bias mask
-  saliency_image = saliency_image.mul(pars.model.central_mask);
+  sal_map = sal_map.mul(pars.model.central_mask);
 
   // attenuate weaker saliency areas
-  cv::pow(saliency_image, pars.model.contrast_factor, saliency_image);
+  cv::pow(sal_map, pars.model.contrast_factor, sal_map);
 
-  return saliency_image;
+  saliency_map.map = sal_map;
 }
 
 cv::Point
-find_salient_point(const cv::Mat &saliency_image, double threshold)
+find_salient_point(const cv::Mat &saliency_map, double threshold)
 {
-  cv::Mat img_copy = saliency_image.clone();
+  cv::Mat img_copy = saliency_map.clone();
   imtools::clip(img_copy, threshold / 255.);
   cv::boxFilter(img_copy, img_copy, -1, cv::Size(15, 15));
 
@@ -222,44 +226,42 @@ find_salient_contours(const cv::Mat &I8UC1, double threshold, const cv::Mat &ker
 }
 
 // TODO: save contours, point, point value to YAML file
-cv::Mat
-saliency_output_image(const cv::Mat &saliency_image, const ModelParameters &pars)
+void
+analyze(SaliencyMap &saliency_map, const ModelParameters &pars)
 {
   cv::Mat gray_img;
-  imtools::convert_32FC1U_to_8UC1(saliency_image, gray_img);
+  imtools::convert_32FC1U_to_8UC1(saliency_map.map, gray_img);
 
   // find lower level saliency cutoff value
-  auto saliency_thresh = pars.saliency_thresh < 0 ? imtools::get_otsu_thresh_value(gray_img) * 2 : pars.saliency_thresh;
+  saliency_map.threshold = pars.saliency_thresh <= 0 ?
+                             imtools::get_otsu_thresh_value(gray_img) * pars.saliency_thresh_mult :
+                             pars.saliency_thresh;
 
   // find salient point and contours using threshold
-  auto salient_contours = find_salient_contours(gray_img, saliency_thresh, pars.dilation_kernel);
-  auto salient_point    = find_salient_point(saliency_image, saliency_thresh);
-  auto salient_value    = saliency_image.at<float>(salient_point) * 255.f;
-
-  std::cout << std::setprecision(5) << "- salient: point=" << salient_point << ", threshold=" << saliency_thresh
-            << ", value=" << salient_value << std::endl;
+  saliency_map.contours = find_salient_contours(gray_img, saliency_map.threshold, pars.dilation_kernel);
+  saliency_map.point    = find_salient_point(saliency_map.map, saliency_map.threshold);
+  saliency_map.value    = saliency_map.map.at<float>(saliency_map.point) * 255.f;
 
   // start making final saliency output image
-  auto salient_colorized = imtools::colorize_32FC1U(saliency_image);
-  if (salient_point.x == 0 && salient_point.y == 0) return salient_colorized;
+  saliency_map.image = imtools::colorize_32FC1U(saliency_map.map);
+  if (saliency_map.point.x == 0 && saliency_map.point.y == 0) return;
 
   cv::Scalar white(255, 255, 255);  // salient point
   cv::Scalar magenta(255, 0, 255);  // salient contour
   cv::Scalar cyan(255, 255, 0);     // other salient regions above threshold
 
   // draw salient contours
-  for (size_t i = 0; i < salient_contours.size(); i++) {
-    auto contains_point = cv::pointPolygonTest(salient_contours[i], salient_point, false);
+  for (size_t i = 0; i < saliency_map.contours.size(); i++) {
+    auto contains_point = cv::pointPolygonTest(saliency_map.contours[i], saliency_map.point, false);
     if (contains_point >= 0) {
-      cv::drawContours(salient_colorized, salient_contours, static_cast<int>(i), magenta, 2);
+      cv::drawContours(saliency_map.image, saliency_map.contours, static_cast<int>(i), magenta, 2);
     } else {
-      cv::drawContours(salient_colorized, salient_contours, static_cast<int>(i), cyan, 2);
+      cv::drawContours(saliency_map.image, saliency_map.contours, static_cast<int>(i), cyan, 2);
     }
   }
-  // draw salient point
-  cv::circle(salient_colorized, salient_point, 5, white, -1);
 
-  return salient_colorized;
+  // draw salient point as circle
+  cv::circle(saliency_map.image, saliency_map.point, 5, white, -1);
 }
 
 // *******************************************************
@@ -331,6 +333,14 @@ namespace debug {
     cv::setTrackbarPos("Saliency thresh", pars->debug_window_name, pos);
   }
 
+  void
+  callback_saliency_thresh_mult(int pos, void *user_data)
+  {
+    auto *pars                 = (ModelParameters *)user_data;
+    pars->saliency_thresh_mult = static_cast<double>(pos) / 10.;
+    cv::setTrackbarPos("Saliency thresh mult", pars->debug_window_name, pos);
+  }
+
   struct TrackbarPositions
   {
     int max_LoG_size;
@@ -339,15 +349,17 @@ namespace debug {
     int contrast_factor;
     int central_focus_prop;
     int saliency_thresh;
+    int saliency_thresh_mult;
 
     explicit TrackbarPositions(const ModelParameters &defaults = ModelParameters(105, 3, 3))
     {
-      max_LoG_size       = static_cast<int>(defaults.max_LoG_size / 7);
-      n_LoG_kern         = static_cast<int>(defaults.n_LoG_kern);
-      gauss_blur_win     = static_cast<int>(defaults.gauss_blur_win);
-      contrast_factor    = static_cast<int>(defaults.contrast_factor);
-      central_focus_prop = static_cast<int>(100. * defaults.central_focus_prop);
-      saliency_thresh    = static_cast<int>(defaults.saliency_thresh + 1);
+      max_LoG_size         = static_cast<int>(defaults.max_LoG_size / 7);
+      n_LoG_kern           = static_cast<int>(defaults.n_LoG_kern);
+      gauss_blur_win       = static_cast<int>(defaults.gauss_blur_win);
+      contrast_factor      = static_cast<int>(defaults.contrast_factor);
+      central_focus_prop   = static_cast<int>(100. * defaults.central_focus_prop);
+      saliency_thresh      = static_cast<int>(defaults.saliency_thresh + 1);
+      saliency_thresh_mult = static_cast<int>(defaults.saliency_thresh_mult * 10);
     }
   };
 
@@ -374,6 +386,10 @@ namespace debug {
 
     cv::createTrackbar(
       "Saliency thresh", pars->debug_window_name, &notches->saliency_thresh, 256, &callback_saliency_thresh, pars);
+
+    cv::createTrackbar("Saliency thresh mult", pars->debug_window_name, &notches->saliency_thresh_mult, 50,
+                       &callback_saliency_thresh_mult, pars);
+    cv::setTrackbarMin("Saliency thresh mult", pars->debug_window_name, 1);
   }
 
   std::vector<Strings>
@@ -390,21 +406,24 @@ namespace debug {
         std::stringstream gauss_blur_win;
         std::stringstream contrast_factor;
         std::stringstream saliency_thresh;
+        std::stringstream saliency_thresh_mult;
         std::stringstream central_focus_prop;
 
         max_LoG_size << "max_LoG_size: " << pars.max_LoG_size;
         n_LoG_kern << "n_LoG_kern: " << pars.n_LoG_kern;
         gauss_blur_win << "gauss_blur_win: " << pars.gauss_blur_win;
         contrast_factor << "contrast_factor: " << pars.contrast_factor;
-        saliency_thresh << "saliency_thresh: " << pars.saliency_thresh;
         central_focus_prop << "central_focus_prop: " << pars.central_focus_prop;
+        saliency_thresh << "saliency_thresh: " << pars.saliency_thresh;
+        saliency_thresh_mult << "saliency_thresh_mult: " << pars.saliency_thresh_mult;
 
         image_txt.emplace_back(max_LoG_size.str());
         image_txt.emplace_back(n_LoG_kern.str());
         image_txt.emplace_back(gauss_blur_win.str());
         image_txt.emplace_back(contrast_factor.str());
-        image_txt.emplace_back(saliency_thresh.str());
         image_txt.emplace_back(central_focus_prop.str());
+        image_txt.emplace_back(saliency_thresh.str());
+        image_txt.emplace_back(saliency_thresh_mult.str());
       }
       all_text.emplace_back(image_txt);
     }

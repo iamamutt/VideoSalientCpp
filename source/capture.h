@@ -130,7 +130,7 @@ get_device(DeviceSwitch &device_switch, DeviceValue &device_args)
 }
 
 FPSCounter
-get_fps_counter(size_t buffer_size = 5, int start_frame = 1, int print_fps = -1)
+initialize_fps_counter(size_t buffer_size = 5, int start_frame = 1, int print_fps = -1)
 {
   FPSCounter counter;
   counter.fps_buff.resize(buffer_size);
@@ -184,7 +184,7 @@ make_image_alts(Images &images)
 }
 
 ImageSet
-init_source_images(const cv::Mat &initial_bgr_img)
+initialize_source_images(const cv::Mat &initial_bgr_img)
 {
   ImageSet img;
 
@@ -199,14 +199,27 @@ init_source_images(const cv::Mat &initial_bgr_img)
   return img;
 }
 
-bool
+void
+update_start_stop_frame_status(const FPSCounter &fps, const CmdLineOpts &opts, ProgramStatus &status)
+{
+  status.start_detection = fps.frame >= opts.start_frame;
+  status.stop_detection  = 0 < opts.stop_frame && opts.stop_frame < fps.frame;
+}
+
+void
 update_source(Source &src)
 {
   // compute & display frames per second
   update_fps(src.fps);
+  update_start_stop_frame_status(src.fps, src.opts, src.status);
+  // no need to capture next if ending early
+  if (src.status.stop_detection) return;
 
-  // keep existing images if device is a single input image
-  if (src.opts.device_switch == DeviceSwitch::IMAGE_FILE) return true;
+  // use existing images if device is a single input image, don't try to read next and make copies
+  if (src.status.static_image) {
+    src.status.frame_was_captured = true;
+    return;
+  }
 
   // assign current images to previous
   std::swap(src.img.prev.I8UC3, src.img.curr.I8UC3);
@@ -215,12 +228,13 @@ update_source(Source &src)
   std::swap(src.img.prev.I32FC1U, src.img.curr.I32FC1U);
 
   // get new images from capture device
-  if (!read_next_frame(src.cap, src.img.curr.I8UC3)) return false;
+  if (!read_next_frame(src.cap, src.img.curr.I8UC3)) {
+    src.status.frame_was_captured = false;
+    return;
+  }
 
-  // make copies of current
+  // make alternate copies of current
   make_image_alts(src.img.curr);
-
-  return true;
 }
 }  // namespace cap
 
