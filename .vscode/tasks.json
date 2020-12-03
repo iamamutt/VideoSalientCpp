@@ -12,7 +12,20 @@
         "reveal": "always",
         "clear": true
     },
+    "problemMatcher": [],
     "tasks": [
+        {
+            "label": "Clean Build Dir",
+            "type": "shell",
+            "command": "rm -f -r build && mkdir build",
+            "windows": {
+                "command": "rmdir build /s /q && mkdir build"
+            },
+            "group": "build",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
         {
             "label": "CMake Configure Release",
             "type": "shell",
@@ -57,15 +70,15 @@
         {
             "label": "Run Parameters Make",
             "type": "shell",
-            "command": "./bin/write_default_params",
-            "windows": {
-                "command": "${workspaceFolder}/saliency/bin/write_default_params.exe"
-            },
+            "command": "write_default_params",
             "args": [],
             "options": {
-                "cwd": "${workspaceFolder}/saliency"
+                "cwd": "${workspaceFolder}/saliency/bin"
             },
-            "problemMatcher": []
+            "dependsOn": [
+                "Clean Build Dir",
+                "CMake Install Release"
+            ]
         },
         {
             "label": "Save Docker Image",
