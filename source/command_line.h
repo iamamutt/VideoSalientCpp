@@ -87,8 +87,13 @@ parse_command_line_args(int argc, const char *const *argv)
 
   if (opts.no_gui && opts.out_dir.empty()) {
     parser.printMessage();
-    std::cerr << "-no_gui is set but -dir is not specified. Check program options." << std::endl;
+    std::cerr << "!!Error: -no_gui is set but -dir is not specified. Check program options." << std::endl;
     exit(1);
+  }
+
+  if (opts.split_output && opts.out_dir.empty()) {
+    parser.printMessage();
+    std::cerr << "!!Warning: -split is set but -dir is not specified. Check program options." << std::endl;
   }
 
   // opts returned based on device priority

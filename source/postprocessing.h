@@ -11,7 +11,6 @@ image_to_file(const std::string &filename, const cv::Mat &image)
   cv::FileStorage fs(filename, cv::FileStorage::WRITE);
   fs << "Data" << image;
   fs.release();
-  std::cout << "Writing Done." << std::endl;
 }
 
 static void

@@ -22,15 +22,17 @@ Usage: saliency [params]
         -?, -h, --help
                 print this help message
         --alt_exit
-                sets program exit to right click on main image
+                sets program exit to also allow right-clicking on the "Saliency" window  
         --cam
                 usb camera index, use 0 for default
         --debug
-                toggle visualization of feature parameters
+                toggle visualization of feature parameters. --dir output will be disabled
         --dir
-                full path to where root saliency output directory will be created
+                full path to where root saliency output directory will be created        
         --img
                 full path to image file
+        --no_gui
+                turn off displaying any output windows and using OpenCV GUI functionality. Will ignore --debug
         --par
                 full path to the YAML parameters file
         --split
