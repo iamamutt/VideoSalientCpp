@@ -157,6 +157,14 @@ You will need some developer tools to build the program, open up the terminal ap
 xcode-select --install
 ```
 
+If you type `clang --version` in the terminal, you should see the output below. The version should be at least 11.
+
+```bash
+Apple clang version 11.0.0 (clang-1100.0.33.16)
+Target: x86_64-apple-darwin19.6.0
+Thread model: posix
+```
+
 You'll also need Homebrew to grab the rest of the libraries and dependencies: https://brew.sh/
 
 After Homebrew is installed, run:
@@ -171,7 +179,7 @@ After the above dependencies are installed, navigate to the repository folder, e
 ```bash
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
-cmake --build . --config Release --target install -- -j 4
+cmake --build . --config Release --target install
 cd ..
 ```
 
