@@ -1,6 +1,6 @@
 # Saliency build with OpenCV/FFMPEG dependencies
 #
-# VERSION               1.0
+# VERSION               0.1.1
 
 
 # build from opencv/ffmpeg image, copying build files and building release
