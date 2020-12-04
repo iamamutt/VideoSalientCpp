@@ -189,7 +189,7 @@ namespace debug {
     Strings chan_type = {"Luminance", "Red vs. Green", "Blue vs. Yellow"};
 
     std::vector<Strings> each_image{3};
-    for (int n; n < 3; ++n) {
+    for (int n = 0; n < 3; ++n) {
       std::stringstream par1;
       par1.precision(4);
       par1 << "scale: " << pars.scale;

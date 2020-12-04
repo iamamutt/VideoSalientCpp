@@ -349,7 +349,6 @@ namespace debug {
   void
   visualize(const MatVec &flow_fields, const flow::Parameters &pars, const cv::Size &resize, const DisplayData &disp)
   {
-    flow_fields.size();
     if (flow_fields.empty() || !pars.toggled) return;
 
     // copy grayscale flow images to color images

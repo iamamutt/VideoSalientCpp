@@ -165,7 +165,7 @@ namespace debug {
   {
     std::vector<Strings> per_img;
 
-    for (int n; n < gabor_pars.theta.size(); ++n) {
+    for (int n = 0; n < gabor_pars.theta.size(); ++n) {
       std::stringstream size;
       std::stringstream sigma;
       std::stringstream theta;
