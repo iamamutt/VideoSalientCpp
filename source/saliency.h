@@ -3,7 +3,6 @@
 
 #include "image_tools.h"
 #include "parameters.h"
-#include "tools.h"
 
 namespace sal {
 

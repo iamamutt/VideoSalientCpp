@@ -102,12 +102,6 @@ euclidean_dist(double x1, double y1, double x2, double y2, double scale = 1)
   return sqrt(pow(velocity(y1, y2, scale), 2) + pow(velocity(x1, x2, scale), 2));
 }
 
-double
-euclidean_dist(const cv::Point2f &p0, const cv::Point2f &p1, double scale = 1)
-{
-  return euclidean_dist(p0.x, p0.y, p1.x, p1.y, scale);
-}
-
 int
 mod_index(int number, int size_limit)
 {

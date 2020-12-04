@@ -2,7 +2,7 @@ version: "3.6"
 
 services:
   saliency:
-    image: saliency-app:v0.1.0
+    image: saliency-app:latest
     build:
       context: .
       dockerfile: ./Dockerfile
@@ -11,7 +11,13 @@ services:
       - DISPLAY=10.0.0.34:0.0
     command:
       # paths to -vid, -par, and -dir are relative to directory mounted in `source:` below
-      ["--vid=samples/vtest.avi", "--par=parameters.yml", "--dir=exports"]
+      [
+        "--vid=samples/vtest.avi",
+        "--par=parameters.yml",
+        "--dir=exports",
+        "--start_frame=2",
+        "--stop_frame=6",
+      ]
     volumes:
       - type: bind
         # absolute path to the data to load on host machine

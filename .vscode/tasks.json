@@ -1,29 +1,28 @@
+// See https://go.microsoft.com/fwlink/?LinkId=733558
+// for the documentation about the tasks.json format
 {
-    // See https://go.microsoft.com/fwlink/?LinkId=733558
-    // for the documentation about the tasks.json format
     "version": "2.0.0",
     "options": {
         "cwd": "${workspaceFolder}"
     },
     "presentation": {
+        "clear": true,
         "echo": true,
         "focus": true,
         "panel": "shared",
-        "reveal": "always",
-        "clear": true
+        "reveal": "always"
     },
-    "problemMatcher": [],
     "tasks": [
         {
             "label": "Clean Build Dir",
             "type": "shell",
             "command": "rm -f -r build && mkdir build",
-            "windows": {
-                "command": "rmdir build /s /q && mkdir build"
-            },
             "group": "build",
             "options": {
                 "cwd": "${workspaceFolder}"
+            },
+            "windows": {
+                "command": "rmdir build /s /q && mkdir build"
             }
         },
         {
@@ -41,8 +40,8 @@
             "type": "shell",
             "command": "cmake --build . --config Release --target install -- -j 4",
             "group": {
-                "kind": "build",
-                "isDefault": true
+                "isDefault": true,
+                "kind": "build"
             },
             "dependsOn": [
                 "CMake Configure Release"
@@ -56,14 +55,14 @@
             "label": "Run Saliency Release",
             "type": "shell",
             "command": "./bin/saliency",
-            "windows": {
-                "command": "${workspaceFolder}/saliency/bin/saliency.exe"
-            },
             "args": [
                 "--vid=share/samples/vtest.avi"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/saliency"
+            },
+            "windows": {
+                "command": "${workspaceFolder}/saliency/bin/saliency.exe"
             },
             "problemMatcher": []
         },
@@ -72,13 +71,28 @@
             "type": "shell",
             "command": "write_default_params",
             "args": [],
-            "options": {
-                "cwd": "${workspaceFolder}/saliency/bin"
-            },
             "dependsOn": [
                 "Clean Build Dir",
                 "CMake Install Release"
-            ]
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/saliency/bin"
+            }
+        },
+        {
+            "label": "Build Docker Image",
+            "type": "shell",
+            "command": "docker",
+            "args": [
+                "build",
+                ".",
+                "-t",
+                "saliency-app:latest"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
         },
         {
             "label": "Save Docker Image",
@@ -88,11 +102,14 @@
                 "save",
                 "-o",
                 "saliency-image.tar",
-                "saliency-app:v0.1.0"
+                "saliency-app:latest"
             ],
             "linux": {
                 "command": "docker save saliency-app:latest | gzip > saliency-image.tar.gz",
                 "args": []
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
             },
             "problemMatcher": []
         },
@@ -107,5 +124,6 @@
             ],
             "problemMatcher": []
         }
-    ]
+    ],
+    "problemMatcher": []
 }

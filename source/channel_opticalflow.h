@@ -107,7 +107,7 @@ add_more_points(const cv::Mat &I8UC1, Parameters &pars)
     add_pt = true;
     // check distance to existing points
     for (auto &existing_pt : pars.points) {
-      if (euclidean_dist(existing_pt.p0, new_pt) < pars.min_pt_dist) {
+      if (imtools::l2_dist(existing_pt.p0, new_pt) < pars.min_pt_dist) {
         // point too close, don't add
         add_pt = false;
         break;
@@ -138,7 +138,7 @@ update_points(Parameters &pars)
 
     // remove points that haven't moved at least 2 pixels after 4 frames
     static_count = pars.pt_static[i];
-    flow_dist    = euclidean_dist(pars.p0_pts[i], pars.p1_pts[i]);
+    flow_dist    = imtools::l2_dist(pars.p0_pts[i], pars.p1_pts[i]);
     if (flow_dist < 2.) {
       // not moving, increment static counter
       static_count++;

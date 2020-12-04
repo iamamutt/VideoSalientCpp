@@ -52,13 +52,13 @@ struct ModelParameters
   cv::Mat blank_image;
 
   // initialize parameters with defaults, some objects are left empty
-  explicit ModelParameters(int _max_LoG_size          = -1,
-                           int _n_LoG_kern            = -1,
-                           int _gauss_blur_win        = -1,
-                           double _contrast_factor    = 4,
-                           double _central_focus_prop = .67,
-                           double _saliency_thresh    = -1,
-                           double _saliency_thresh_mult    = 2)
+  explicit ModelParameters(int _max_LoG_size            = -1,
+                           int _n_LoG_kern              = -1,
+                           int _gauss_blur_win          = -1,
+                           double _contrast_factor      = 4,
+                           double _central_focus_prop   = .67,
+                           double _saliency_thresh      = -1,
+                           double _saliency_thresh_mult = 2)
     : max_LoG_size(_max_LoG_size),
       n_LoG_kern(_n_LoG_kern),
       gauss_blur_win(_gauss_blur_win),

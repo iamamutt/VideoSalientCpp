@@ -311,6 +311,12 @@ sigmoid(const cv::Mat &img_32F)
   return mat;
 }
 
+double
+l2_dist(const cv::Point2f &p0, const cv::Point2f &p1, double scale = 1)
+{
+  return euclidean_dist(p0.x, p0.y, p1.x, p1.y, scale);
+}
+
 void
 convolve(cv::Mat &I32FC, const cv::Mat &float_kernel)
 {
