@@ -32,8 +32,7 @@
             "group": "build",
             "windows": {
                 "command": "cmake --no-warn-unused-cli -DOPENCV_INSTALL_DIR=${env:USERPROFILE}/lib/gcc/opencv/x64/mingw/staticlib -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE -DCMAKE_BUILD_TYPE:STRING=Release -B ${workspaceFolder}/build -G \"MinGW Makefiles\""
-            },
-            "problemMatcher": []
+            }
         },
         {
             "label": "CMake Install Release",
@@ -48,8 +47,7 @@
             ],
             "options": {
                 "cwd": "${workspaceFolder}/build"
-            },
-            "problemMatcher": []
+            }
         },
         {
             "label": "Run Saliency Release",
@@ -77,6 +75,28 @@
             ],
             "options": {
                 "cwd": "${workspaceFolder}/saliency/bin"
+            }
+        },
+        {
+            "label": "CMake Configure Release MSVC",
+            "type": "shell",
+            "command": "cmake --no-warn-unused-cli -DCMAKE_BUILD_TYPE=Release -B build -G \"Visual Studio 16 2019\" -DOPENCV_INSTALL_DIR=${env:USERPROFILE}/lib/msvc/opencv/build/x64/vc15/lib",
+            "group": "build",
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "CMake Install Release MSVC",
+            "type": "shell",
+            "command": "cmake --build . --config Release --target install",
+            "group": "build",
+            "dependsOn": [
+                "CMake Configure Release MSVC"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/build"
             }
         },
         {
