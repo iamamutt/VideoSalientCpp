@@ -49,6 +49,11 @@ if(WIN32)
       TARGET ${EXEC_NAME}
       PRE_LINK
       COMMAND ${CMAKE_COMMAND} -E copy ${OPENCV_FFMPEG_LIB} ${SALIENCY_BIN_DIR})
+    add_custom_command(
+      TARGET ${EXEC_NAME}
+      PRE_LINK
+      COMMAND ${CMAKE_COMMAND} -E copy ${OPENCV_FFMPEG_LIB}
+              "${CMAKE_SOURCE_DIR}/build")
 
   else(message ("FFMPEG not found. Video capture may not work."))
 

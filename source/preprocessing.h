@@ -129,12 +129,12 @@ setup_windows(Source &src, Parameters &pars)
     return;
   }
 
-  cv::startWindowThread();
+  cv::Point no_move(-1, -1);
 
   // main display, always shown
   cv::Point start_pos(20, 20);
   cv::Rect main_rect = cv::Rect(start_pos, src.dim.resize);
-  src.layouts.main   = imtools::setup_window_layout(2, 1, main_rect, "Saliency", true);
+  src.layouts.main   = imtools::setup_window_layout(2, 1, main_rect, "Saliency");
   main_rect          = cv::getWindowImageRect(src.layouts.main.winname);
   auto menu_bar_ht   = main_rect.y - start_pos.y;
 
@@ -143,62 +143,69 @@ setup_windows(Source &src, Parameters &pars)
     cv::setMouseCallback("Saliency", mouse_exit_callback_fn, &src.status.right_mouse_btn_down);
   }
 
+  if (!src.opts.debug) return;
+
   // flicker display, right of main
-  auto flick_rect = cv::Rect(cv::Point(main_rect.br().x + 1, start_pos.y), src.dim.resize);
+  auto flick_pos  = src.opts.win_align ? cv::Point(main_rect.br().x + 1, start_pos.y) : no_move;
+  auto flick_rect = cv::Rect(flick_pos, src.dim.resize);
   if (pars.chan.flicker.toggled) {
-    src.layouts.flicker = imtools::setup_window_layout(
-      1, 1, flick_rect, pars.chan.flicker.debug_window_name, src.opts.debug);
-    if (src.opts.debug) flick_rect = cv::getWindowImageRect(src.layouts.flicker.winname);
+    src.layouts.flicker = imtools::setup_window_layout(1, 1, flick_rect, pars.chan.flicker.debug_window_name);
+    flick_rect          = cv::getWindowImageRect(src.layouts.flicker.winname);
   } else {
     flick_rect.width  = 0;
     flick_rect.height = 0;
   }
 
   // color display, below main and flicker
-  auto color_rect = cv::Rect(
-    cv::Point(main_rect.x, std::max(main_rect.br().y + 1, flick_rect.br().y + 1)), src.dim.resize);
+  auto color_pos  = src.opts.win_align ? cv::Point(main_rect.x, std::max(main_rect.br().y + 1, flick_rect.br().y + 1)) :
+                                         no_move;
+  auto color_rect = cv::Rect(color_pos, src.dim.resize);
   if (pars.chan.color.toggled) {
-    src.layouts.color = imtools::setup_window_layout(
-      3, 1, color_rect, pars.chan.color.debug_window_name, src.opts.debug);
-    if (src.opts.debug) color_rect = cv::getWindowImageRect(src.layouts.color.winname);
+    src.layouts.color = imtools::setup_window_layout(3, 1, color_rect, pars.chan.color.debug_window_name);
+    color_rect        = cv::getWindowImageRect(src.layouts.color.winname);
   } else {
     color_rect.width  = 0;
     color_rect.height = 0;
   }
 
   // lines, right of flicker
-  auto lines_rect = cv::Rect(
-    cv::Point(std::max(color_rect.br().x + 1, flick_rect.br().x + 1), start_pos.y), src.dim.resize);
+  auto lines_pos = src.opts.win_align ? cv::Point(std::max(color_rect.br().x + 1, flick_rect.br().x + 1), start_pos.y) :
+                                        no_move;
+  auto lines_rect = cv::Rect(lines_pos, src.dim.resize);
   cv::Rect(cv::Point(main_rect.width + main_rect.x + 1, main_rect.y), src.dim.resize);
   if (pars.chan.lines.toggled) {
-    src.layouts.lines = imtools::setup_window_layout(
-      4, 2, lines_rect, pars.chan.lines.debug_window_name, src.opts.debug);
-    if (src.opts.debug) lines_rect = cv::getWindowImageRect(src.layouts.lines.winname);
+    src.layouts.lines = imtools::setup_window_layout(4, 2, lines_rect, pars.chan.lines.debug_window_name);
+    lines_rect        = cv::getWindowImageRect(src.layouts.lines.winname);
   } else {
     lines_rect.width  = 0;
     lines_rect.height = 0;
   }
 
   // flow, below lines
-  auto flow_rect = cv::Rect(cv::Point(lines_rect.x - 1, std::max(lines_rect.br().y + 1, start_pos.y)), src.dim.resize);
+  auto flow_pos  = src.opts.win_align ? cv::Point(lines_rect.x - 1, std::max(lines_rect.br().y + 1, start_pos.y)) :
+                                        no_move;
+  auto flow_rect = cv::Rect(flow_pos, src.dim.resize);
   if (pars.chan.flow.toggled) {
-    src.layouts.flow = imtools::setup_window_layout(4, 1, flow_rect, pars.chan.flow.debug_window_name, src.opts.debug);
-    if (src.opts.debug) flow_rect = cv::getWindowImageRect(src.layouts.flow.winname);
+    src.layouts.flow = imtools::setup_window_layout(4, 1, flow_rect, pars.chan.flow.debug_window_name);
+    flow_rect        = cv::getWindowImageRect(src.layouts.flow.winname);
   } else {
     flow_rect.width  = 0;
     flow_rect.height = 0;
   }
 
   // feature maps bottom left
-  auto maps_rect = cv::Rect(
-    cv::Point(main_rect.x, std::max(main_rect.br().y + 1, color_rect.br().y + 1)), src.dim.resize);
+  auto maps_pos  = src.opts.win_align ? cv::Point(main_rect.x, std::max(main_rect.br().y + 1, color_rect.br().y + 1)) :
+                                        no_move;
+  auto maps_rect = cv::Rect(maps_pos, src.dim.resize);
   if (pars.model.toggle) {
-    src.layouts.features = imtools::setup_window_layout(3, 2, maps_rect, pars.model.debug_window_name, src.opts.debug);
-    if (src.opts.debug) maps_rect = cv::getWindowImageRect(src.layouts.features.winname);
+    src.layouts.features = imtools::setup_window_layout(3, 2, maps_rect, pars.model.debug_window_name);
+    maps_rect            = cv::getWindowImageRect(src.layouts.features.winname);
   } else {
     maps_rect.width  = 0;
     maps_rect.height = 0;
   }
+
+  //  cv::setWindowProperty(src.layouts.main.winname, cv::WND_PROP_TOPMOST, 1);
 }
 
 auto

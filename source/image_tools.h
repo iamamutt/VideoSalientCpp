@@ -829,9 +829,9 @@ setup_window_layout(const cv::Size &size,
   auto layout = imtools::setup_image_layout(imgs, cols, rows, 1, window_name);
   if (show) {
     imtools::show_layout_imgs(imgs, layout);
+    cv::waitKey(1);
     if (pos.x == -1 && pos.y == -1) return layout;
     cv::moveWindow(window_name, pos.x, pos.y);
-    cv::waitKey(1);
   }
   return layout;
 }
@@ -841,7 +841,7 @@ setup_window_layout(int cols,
                     int rows                       = -1,
                     const cv::Rect &rect           = cv::Rect(-1, -1, 0, 0),
                     const std::string &window_name = "Unnamed Window",
-                    bool show                      = false)
+                    bool show                      = true)
 {
   return setup_window_layout(rect.size(), rows, cols, window_name, show, rect.tl());
 }
@@ -911,7 +911,7 @@ win_opened(int key,
 
   if (!check_name.empty()) {
     auto visible = static_cast<int>(cv::getWindowProperty(check_name, cv::WND_PROP_VISIBLE));
-    return non_stopping_key && visible > 0;
+    return non_stopping_key && visible != 0;
   }
 
   return non_stopping_key;
