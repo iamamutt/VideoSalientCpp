@@ -4,19 +4,26 @@
 #include "image_tools.h"
 #include "parameters.h"
 
-namespace sal {
+namespace saliency {
 
 cv::Mat
 summation_saturation(MatVec &filt_chan_imgs)
 {
-  // sum a single image processed by several filters
-  auto dst = imtools::sum_and_scale(filt_chan_imgs);
+  if (filt_chan_imgs.empty()) return cv::Mat(0, 0, CV_32FC1);
 
-  // remove negative activations
-  imtools::neg_trunc(dst);
+  // saturate then sum images that were processed by n filters
+  cv::Mat flattened = imtools::make_black(filt_chan_imgs[0], CV_32FC1);
+  for (auto &&filt_img : filt_chan_imgs) {
+    imtools::tanh<float>(filt_img);
+    flattened += filt_img;
+  }
+  auto scale = static_cast<float>(filt_chan_imgs.size());
+  flattened /= scale;
 
-  // apply saturation and return in unit scale
-  return imtools::tanh(dst);
+  // remove extreme negative
+  imtools::gelu_approx<float>(flattened);
+
+  return flattened;
 }
 
 MatVec
@@ -73,7 +80,7 @@ extract_color(const ImageSet &images, Parameters &pars, ChannelImages &sep_chan_
   auto color     = center_surround_activation(sep_chan_imgs.color, pars.model.kernels_LoG, no_async);
   maps.luminance = color[0].clone();
   maps.color     = imtools::sum_images(slice(color, 1, 2));
-
+  imtools::tanh<float>(maps.color);
   // adjust scale for missing feature maps
   if (pars.toggle_adj != 1.f) {
     maps.luminance *= pars.toggle_adj;
@@ -88,7 +95,8 @@ extract_lines(const ImageSet &images, Parameters &pars, ChannelImages &sep_chan_
   if (sep_chan_imgs.lines.empty()) return;
   auto lines = center_surround_activation(sep_chan_imgs.lines, pars.model.kernels_LoG, no_async);
   maps.lines = imtools::sum_images(lines);
-  maps.lines /= (.5 * lines.size());  // half of the images overlap
+  maps.lines /= (static_cast<float>(lines.size()) / 5.f);
+  imtools::tanh<float>(maps.lines);
   if (pars.toggle_adj != 1.f) maps.lines *= pars.toggle_adj;
 }
 
@@ -151,6 +159,11 @@ MatVec
 feature_maps_struct_to_vec(const FeatureMaps &feature_maps, const cv::Mat &fallback)
 {
   MatVec maps_vec;
+  if (feature_maps.is_empty()) {
+    for (int i = 0; i < 5; ++i) maps_vec.push_back(fallback);
+    return maps_vec;
+  }
+
   maps_vec.emplace_back(feature_maps.luminance.empty() ? fallback : feature_maps.luminance);
   maps_vec.emplace_back(feature_maps.color.empty() ? fallback : feature_maps.color);
   maps_vec.emplace_back(feature_maps.lines.empty() ? fallback : feature_maps.lines);
@@ -169,7 +182,10 @@ extract_saliency(const FeatureMaps &feature_maps, const cv::Mat &fallback)
   auto saliency_image = imtools::sum_images(maps_vec);
 
   // compress and saturate back to unit scale
-  saliency_image = imtools::tanh(saliency_image);
+  imtools::tanh<float>(saliency_image);
+
+  // remove negative values
+  imtools::neg_trunc(saliency_image);
 
   return saliency_image;
 }
@@ -196,60 +212,102 @@ detect(const Source &source,
   // attenuate weaker saliency areas
   cv::pow(sal_map, pars.model.contrast_factor, sal_map);
 
-  saliency_map.map = sal_map;
+  // map smoothing
+  if (saliency_map.prev_map.empty()) {
+    saliency_map.map = sal_map;
+  } else {
+    // TODO: weight values should be based on FPS
+    saliency_map.map = sal_map * 0.63f + saliency_map.prev_map * 0.37f;
+  }
+  saliency_map.prev_map = saliency_map.map.clone();
+}
+
+std::vector<std::vector<cv::Point2i>>
+find_salient_contours(SaliencyMap &map_data, const cv::Mat &morph_kernel)
+{
+  cv::threshold(map_data.map_8bit, map_data.binary_img, map_data.threshold, 1, cv::THRESH_BINARY);
+  cv::erode(map_data.binary_img, map_data.binary_img, morph_kernel, cv::Point(-1, -1), 1);
+  std::vector<std::vector<cv::Point2i>> contours;
+  cv::findContours(map_data.binary_img, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+  return contours;
 }
 
 void
-find_salient_contours(SaliencyMap &map_data, const cv::Mat &dilate_kernel)
+find_salient_points(SaliencyMap &map_data, const std::vector<std::vector<cv::Point2i>> &contours)
 {
-  cv::Mat binary_img;
-  cv::threshold(map_data.map_8bit, binary_img, map_data.threshold, 255, cv::THRESH_BINARY);
-  cv::dilate(binary_img, binary_img, dilate_kernel, cv::Point(-1, -1), 2);
-  map_data.contours.clear();
-  cv::findContours(binary_img, map_data.contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-}
+  auto n_cont = contours.size();
+  std::vector<float> salient_values(n_cont);
+  std::vector<cv::Point> salient_coords(n_cont);
+  std::vector<double> contour_size(n_cont);
 
-void
-find_salient_points(SaliencyMap &map_data)
-{
-  cv::Mat peaks_smoothed;
-  cv::boxFilter(map_data.map, peaks_smoothed, -1, cv::Size(15, 15));
+  for (int i = 0; i < n_cont; i++) {
+    // draw only contour i, fill with 1's
+    cv::Mat mask = imtools::make_black(map_data.map, CV_8UC1);
+    cv::drawContours(mask, contours, i, cv::Scalar_<uchar>(1), -1);
 
-  map_data.salient_coords.clear();
-  map_data.salient_values.clear();
-
-  double total_max = 0;
-  int which_max    = -1;
-  for (int i = 0; i < map_data.contours.size(); i++) {
-    auto mask = imtools::make_black(map_data.map, CV_8UC1);
-    cv::drawContours(mask, map_data.contours, i, cv::Scalar_<uchar>(1), -1);
-
+    // use contour mask to get saliency coord from saliency image
     double max_val;
     cv::Point max_loc;
-    cv::minMaxLoc(peaks_smoothed, nullptr, &max_val, nullptr, &max_loc, mask);
+    cv::minMaxLoc(map_data.map, nullptr, &max_val, nullptr, &max_loc, mask);
 
-    if (max_val > total_max) {
-      total_max = max_val;
-      which_max = i;
-    }
-    map_data.salient_values.push_back(max_val);
-    map_data.salient_coords.push_back(max_loc);
+    salient_coords[i] = max_loc;
+    salient_values[i] = static_cast<float>(max_val);
+    contour_size[i]   = cv::sum(mask)[0];
   }
 
-  // move max saliency to front
-  if (which_max > 0) {
-    std::swap(map_data.contours[0], map_data.contours[which_max]);
-    std::swap(map_data.salient_values[0], map_data.salient_values[which_max]);
-    std::swap(map_data.salient_coords[0], map_data.salient_coords[which_max]);
+  // reorder vectors by saliency values, with most salient first
+  auto index = sorted_index(salient_values);
+  for (std::vector<size_t>::size_type idx = index.size() - 1; idx != (std::vector<size_t>::size_type) - 1; idx--) {
+    auto i = index[idx];
+    // should be cleared before pushback
+    map_data.contour_size.push_back(contour_size[i]);
+    map_data.salient_values.push_back(salient_values[i]);
+    map_data.salient_coords.push_back(salient_coords[i]);
+    map_data.contours.push_back(contours[i]);
+  }
+
+  // find other salient points that are equal to the max saliency
+  if (map_data.salient_values.size() < 2) return;
+  std::vector<size_t> equal_idx;
+  size_t which_min = 0;
+  auto max_sal     = static_cast<int>(round(map_data.salient_values[which_min] * 255));
+  for (size_t i = 1; i < map_data.salient_values.size(); i++) {
+    auto next_sal = static_cast<int>(round(map_data.salient_values[i] * 255));
+    if (max_sal != next_sal) break;
+    equal_idx.push_back(i);
+  }
+
+  // find distances for equally salient points
+  if (equal_idx.empty()) return;
+  cv::Point mid_pt(map_data.image.cols / 2, map_data.image.rows / 2);
+  double current_min_dist = imtools::l2_dist(mid_pt, map_data.salient_coords[which_min]);
+  for (auto idx : equal_idx) {
+    double dist = imtools::l2_dist(mid_pt, map_data.salient_coords[idx]);
+    if (dist < current_min_dist) {
+      current_min_dist = dist;
+      which_min        = idx;
+    }
+  }
+
+  // swap equally salient point with one closest to center of image
+  if (which_min > 0) {
+    std::swap(map_data.contours[0], map_data.contours[which_min]);
+    std::swap(map_data.contour_size[0], map_data.contour_size[which_min]);
+    std::swap(map_data.salient_values[0], map_data.salient_values[which_min]);
+    std::swap(map_data.salient_coords[0], map_data.salient_coords[which_min]);
   }
 }
 
-// TODO: save contours, point, point value to YAML file
 void
 analyze(SaliencyMap &map_data, const ModelParameters &pars)
 {
+  map_data.contour_size.clear();
+  map_data.salient_values.clear();
+  map_data.salient_coords.clear();
+  map_data.contours.clear();
+
   imtools::convert_32FC1U_to_8UC1(map_data.map, map_data.map_8bit);
-  map_data.image = imtools::colorize_32FC1U(map_data.map);
+  cv::applyColorMap(map_data.map_8bit, map_data.image, cv::COLORMAP_VIRIDIS);
 
   // find lower level saliency cutoff value
   map_data.threshold = pars.saliency_thresh <= 0 ?
@@ -257,11 +315,11 @@ analyze(SaliencyMap &map_data, const ModelParameters &pars)
                          pars.saliency_thresh;
 
   // find salient contours using threshold
-  find_salient_contours(map_data, pars.dilation_kernel);
-  if (map_data.contours.empty()) return;
+  auto contours = find_salient_contours(map_data, pars.dilation_kernel);
+  if (contours.empty()) return;
 
   // find salient points from contours
-  find_salient_points(map_data);
+  find_salient_points(map_data, contours);
 
   // draw salient contours on final output image
   cv::drawContours(map_data.image, map_data.contours, 0, map_data.magenta, 2, cv::LINE_AA);
@@ -282,27 +340,35 @@ namespace debug {
   callback_log_max_win(int pos, void *user_data)
   {
     auto *pars         = (ModelParameters *)user_data;
-    auto k             = std::max(pos, 1) * 7;
-    auto n             = pars->n_LoG_kern == 0 ? -1 : pars->n_LoG_kern;
-    pars->kernels_LoG  = imtools::LoG_kernels(k, n);
-    pars->n_LoG_kern   = static_cast<int>(pars->kernels_LoG.size());
-    pars->max_LoG_size = pars->n_LoG_kern == 0 ? 0 : pars->kernels_LoG[0].rows;
-
-    cv::setTrackbarPos("N LoG kerns", pars->debug_window_name, pars->n_LoG_kern);
-    cv::setTrackbarPos("Max LoG size", pars->debug_window_name, pars->max_LoG_size / 7);
+    pars->max_LoG_prop = pos / 100.;
+    if (pars->max_LoG_prop == 0) {
+      pars->n_LoG_kern = 0;
+      pars->kernels_LoG.clear();
+      cv::setTrackbarPos("LoG n", pars->debug_window_name, 0);
+    } else {
+      if (pars->n_LoG_kern == 0) pars->n_LoG_kern = -1;
+      update_LoG_kernel_data(pars->kernels_LoG, pars->max_LoG_prop, pars->n_LoG_kern, pars->image_len);
+    }
+    pos          = static_cast<int>(pars->max_LoG_prop * 100.);
+    pars->toggle = pars->n_LoG_kern > 0;
+    cv::setTrackbarPos("LoG prop", pars->debug_window_name, pos);
   }
 
   void
   callback_log_n_kern(int pos, void *user_data)
   {
-    auto *pars         = (ModelParameters *)user_data;
-    auto k             = pars->max_LoG_size == 0 ? 105 : pars->max_LoG_size;
-    pars->kernels_LoG  = imtools::LoG_kernels(k, pos);
-    pars->n_LoG_kern   = static_cast<int>(pars->kernels_LoG.size());
-    pars->max_LoG_size = pars->n_LoG_kern == 0 ? 0 : pars->kernels_LoG[0].rows;
-
-    cv::setTrackbarPos("N LoG kerns", pars->debug_window_name, pars->n_LoG_kern);
-    cv::setTrackbarPos("Max LoG size", pars->debug_window_name, pars->max_LoG_size / 7);
+    auto *pars       = (ModelParameters *)user_data;
+    pars->n_LoG_kern = pos;
+    if (pars->n_LoG_kern == 0) {
+      pars->max_LoG_prop = 0.;
+      pars->kernels_LoG.clear();
+      cv::setTrackbarPos("LoG prop", pars->debug_window_name, 0);
+    } else {
+      update_LoG_kernel_data(pars->kernels_LoG, pars->max_LoG_prop, pars->n_LoG_kern, pars->image_len);
+    }
+    pos          = pars->n_LoG_kern;
+    pars->toggle = pars->n_LoG_kern > 0;
+    cv::setTrackbarPos("LoG n", pars->debug_window_name, pos);
   }
 
   void
@@ -360,9 +426,9 @@ namespace debug {
     int saliency_thresh;
     int saliency_thresh_mult;
 
-    explicit TrackbarPositions(const ModelParameters &defaults = ModelParameters(105, 3, 3))
+    explicit TrackbarPositions(const ModelParameters &defaults = ModelParameters(.25, 3, 3))
     {
-      max_LoG_size         = static_cast<int>(defaults.max_LoG_size / 7);
+      max_LoG_size         = static_cast<int>(defaults.max_LoG_prop * 100.);
       n_LoG_kern           = static_cast<int>(defaults.n_LoG_kern);
       gauss_blur_win       = static_cast<int>(defaults.gauss_blur_win);
       contrast_factor      = static_cast<int>(defaults.contrast_factor);
@@ -376,10 +442,9 @@ namespace debug {
   create_trackbar(TrackbarPositions *notches, ModelParameters *pars)
   {
     if (!pars->toggle) return;
-    cv::namedWindow(pars->debug_window_name);
-    cv::createTrackbar(
-      "Max LoG size", pars->debug_window_name, &notches->max_LoG_size, 100, &callback_log_max_win, pars);
-    cv::createTrackbar("N LoG kerns", pars->debug_window_name, &notches->n_LoG_kern, 10, &callback_log_n_kern, pars);
+    cv::namedWindow(pars->debug_window_name, cv::WINDOW_NORMAL);
+    cv::createTrackbar("LoG prop", pars->debug_window_name, &notches->max_LoG_size, 200, &callback_log_max_win, pars);
+    cv::createTrackbar("LoG n", pars->debug_window_name, &notches->n_LoG_kern, 10, &callback_log_n_kern, pars);
 
     cv::createTrackbar(
       "Blur size", pars->debug_window_name, &notches->gauss_blur_win, 50, &callback_gauss_blur_win, pars);
@@ -410,7 +475,7 @@ namespace debug {
     for (auto &name : map_names) {
       Strings image_txt = {name};
       if (name == "Params:") {
-        std::stringstream max_LoG_size;
+        std::stringstream max_LoG_prop;
         std::stringstream n_LoG_kern;
         std::stringstream gauss_blur_win;
         std::stringstream contrast_factor;
@@ -418,7 +483,7 @@ namespace debug {
         std::stringstream saliency_thresh_mult;
         std::stringstream central_focus_prop;
 
-        max_LoG_size << "max_LoG_size: " << pars.max_LoG_size;
+        max_LoG_prop << "max_LoG_prop: " << pars.max_LoG_prop;
         n_LoG_kern << "n_LoG_kern: " << pars.n_LoG_kern;
         gauss_blur_win << "gauss_blur_win: " << pars.gauss_blur_win;
         contrast_factor << "contrast_factor: " << pars.contrast_factor;
@@ -426,7 +491,7 @@ namespace debug {
         saliency_thresh << "saliency_thresh: " << pars.saliency_thresh;
         saliency_thresh_mult << "saliency_thresh_mult: " << pars.saliency_thresh_mult;
 
-        image_txt.emplace_back(max_LoG_size.str());
+        image_txt.emplace_back(max_LoG_prop.str());
         image_txt.emplace_back(n_LoG_kern.str());
         image_txt.emplace_back(gauss_blur_win.str());
         image_txt.emplace_back(contrast_factor.str());
@@ -446,8 +511,8 @@ namespace debug {
             const cv::Size &resize,
             const DisplayData &disp)
   {
-    if (!pars.toggle) return;
-    MatVec maps = sal::feature_maps_struct_to_vec(feature_maps, pars.blank_image);
+    if (!pars.toggle || feature_maps.is_empty()) return;
+    MatVec maps = saliency::feature_maps_struct_to_vec(feature_maps, pars.blank_image);
     maps.emplace_back(pars.blank_image);
     auto par_text = texify_pars(pars);
     MatVec colorized_maps;
@@ -461,6 +526,6 @@ namespace debug {
     imtools::show_layout_imgs(colorized_maps, disp);
   }
 }  // namespace debug
-}  // namespace sal
+}  // namespace saliency
 
 #endif  // SALIENCY_SALIENCY_H

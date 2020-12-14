@@ -14,10 +14,10 @@ struct Parameters
   cv::Mat morph_shape;
   std::string debug_window_name = "FlickerChannel";
 
-  explicit Parameters(float lower_limit = 32, float upper_limit = 255, float _weight = 1)
-    : lower_lim(lower_limit / 255.f), upper_lim(upper_limit / 255.f), weight(_weight)
+  explicit Parameters(float lower_limit = .20, float upper_limit = 1, float _weight = 1)
+    : lower_lim(lower_limit), upper_lim(upper_limit), weight(_weight)
   {
-    morph_shape = imtools::get_morph_shape(4);
+    morph_shape = imtools::kernel_morph(4);
   };
 };
 
@@ -32,8 +32,9 @@ detect(const cv::Mat &prev_32FC1_unit, const cv::Mat &curr_32FC1_unit, const Par
   flicker_image *= (1.f / pars.upper_lim);
   cv::morphologyEx(flicker_image, flicker_image, cv::MORPH_DILATE, pars.morph_shape, cv::Point(-1, -1), 4);
   cv::morphologyEx(flicker_image, flicker_image, cv::MORPH_ERODE, pars.morph_shape, cv::Point(-1, -1), 4);
-  flicker_image = imtools::tanh(flicker_image * 3.);
-  flicker       = {flicker_image};
+  flicker_image *= 3.f;
+  imtools::tanh<float>(flicker_image);
+  flicker = {flicker_image};
   if (pars.weight == 1) return flicker;
   flicker[0] *= pars.weight;
   return flicker;
@@ -77,9 +78,11 @@ namespace debug {
   create_trackbar(flick::debug::TrackbarPositions *notches, flick::Parameters *pars)
   {
     if (!pars->toggled) return;
-    cv::namedWindow(pars->debug_window_name);
+    cv::namedWindow(pars->debug_window_name, cv::WINDOW_NORMAL);
     cv::createTrackbar("Min Thresh", pars->debug_window_name, &notches->lower_lim, 255, &callback_min_thresh, pars);
+    cv::setTrackbarMin("Min Thresh", pars->debug_window_name, 1);
     cv::createTrackbar("Max Thresh", pars->debug_window_name, &notches->upper_lim, 255, &callback_max_thresh, pars);
+    cv::setTrackbarMin("Max Thresh", pars->debug_window_name, 2);
   }
 
   Strings

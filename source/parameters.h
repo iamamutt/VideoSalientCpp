@@ -21,7 +21,7 @@ struct ChannelParameters
     if (!dims.empty()) {
       auto sz = std::min(dims.height, dims.width);
 
-      auto lines_win = odd_int(static_cast<uint>(sz * .02));
+      auto lines_win = odd_int(static_cast<uint>(sz * .025));
       auto flow_win  = odd_int(static_cast<uint>(sz * .125));
 
       lines = lines::Parameters(lines_win);
@@ -30,10 +30,25 @@ struct ChannelParameters
   }
 };
 
+void
+update_LoG_kernel_data(MatVec &kernels_LoG,
+                       double &max_LoG_prop,
+                       int &n_LoG_kern,
+                       const double &length,
+                       double min_k = 7,
+                       double max_p = 2)
+{
+  double max_prop       = std::min(std::max((min_k / length), max_LoG_prop), max_p);
+  uint max_LoG_win_size = odd_int(static_cast<int>(max_prop * length));
+  kernels_LoG           = imtools::kernels_lap_of_gauss(max_LoG_win_size, n_LoG_kern);
+  n_LoG_kern            = static_cast<int>(kernels_LoG.size());
+  max_LoG_prop          = n_LoG_kern == 0 ? 0. : (kernels_LoG[0].rows / length);
+}
+
 // collection of general saliency parameters
 struct ModelParameters
 {
-  int max_LoG_size;
+  double max_LoG_prop;
   int n_LoG_kern;
   int gauss_blur_win;
   double contrast_factor;
@@ -41,6 +56,8 @@ struct ModelParameters
   double saliency_thresh;
   double saliency_thresh_mult;
 
+  // no constructor input
+  double image_len              = 0;
   std::string debug_window_name = "FeatureMaps";
   bool toggle                   = true;
 
@@ -52,14 +69,14 @@ struct ModelParameters
   cv::Mat blank_image;
 
   // initialize parameters with defaults, some objects are left empty
-  explicit ModelParameters(int _max_LoG_size            = -1,
-                           int _n_LoG_kern              = -1,
-                           int _gauss_blur_win          = -1,
-                           double _contrast_factor      = 4,
-                           double _central_focus_prop   = .67,
+  explicit ModelParameters(double _max_LoG_prop         = 0.5,
+                           int _n_LoG_kern              = 3,
+                           int _gauss_blur_win          = 5,
+                           double _contrast_factor      = 2,
+                           double _central_focus_prop   = .63,
                            double _saliency_thresh      = -1,
-                           double _saliency_thresh_mult = 2)
-    : max_LoG_size(_max_LoG_size),
+                           double _saliency_thresh_mult = 1.5)
+    : max_LoG_prop(_max_LoG_prop),
       n_LoG_kern(_n_LoG_kern),
       gauss_blur_win(_gauss_blur_win),
       contrast_factor(_contrast_factor),
@@ -72,20 +89,17 @@ struct ModelParameters
     : ModelParameters(std::move(pars))
   {
     if (dims.empty()) {
-      std::cerr << "\n!!Image size is unspecified for model parameters" << std::endl;
+      std::cerr << "\n!!Image size is unspecified for ModelParameters constructor" << std::endl;
       exit(1);
     };
 
     blank_image = imtools::make_black(dims);
-    auto sz     = std::min(dims.height, dims.width);
+    image_len   = static_cast<double>(std::min(dims.height, dims.width));
 
-    max_LoG_size = max_LoG_size < 1 ? sz / 4 : max_LoG_size;
-    kernels_LoG  = imtools::LoG_kernels(max_LoG_size, n_LoG_kern);
-    n_LoG_kern   = static_cast<int>(kernels_LoG.size());
-    max_LoG_size = n_LoG_kern == 0 ? 0 : kernels_LoG[0].rows;
-    toggle       = n_LoG_kern > 0;
+    update_LoG_kernel_data(kernels_LoG, max_LoG_prop, n_LoG_kern, image_len);
+    toggle = n_LoG_kern > 0;
 
-    double _gauss_blur_win = gauss_blur_win < 1 ? sz * .015 : gauss_blur_win;
+    double _gauss_blur_win = gauss_blur_win <= 0 ? image_len * .01 : gauss_blur_win;
     gauss_kern             = imtools::kernel_gauss_2d(odd_int(_gauss_blur_win));
     gauss_blur_win         = gauss_kern.cols;
 
@@ -141,7 +155,7 @@ read_model_parameters(cv::FileStorage &fs, const cv::Size &dims)
     return pars;
   }
 
-  ModelParameters user_pars(get_node_default<int>(pars_node["max_LoG_size"], -1),
+  ModelParameters user_pars(get_node_default<double>(pars_node["max_LoG_prop"], pars.max_LoG_prop),
                             get_node_default<int>(pars_node["n_LoG_kern"], -1),
                             get_node_default<int>(pars_node["gauss_blur_win"], -1),
                             get_node_default<int>(pars_node["contrast_factor"], pars.contrast_factor),
@@ -188,8 +202,8 @@ read_channel_parameters(cv::FileStorage &fs, const cv::Size &dims)
   // read flick channel parameters
   auto flicker_node = pars_node["flicker"];
   if (!flicker_node.empty()) {
-    pars.flicker = flick::Parameters(get_node_default(flicker_node["lower_limit"], pars.flicker.lower_lim * 255),
-                                     get_node_default(flicker_node["upper_limit"], pars.flicker.upper_lim * 255),
+    pars.flicker = flick::Parameters(get_node_default(flicker_node["lower_limit"], pars.flicker.lower_lim),
+                                     get_node_default(flicker_node["upper_limit"], pars.flicker.upper_lim),
                                      get_node_default(flicker_node["weight"], pars.flicker.weight));
   }
 
@@ -211,66 +225,191 @@ read_channel_parameters(cv::FileStorage &fs, const cv::Size &dims)
 void
 write_model_parameters(cv::FileStorage &fs, const ModelParameters &pars)
 {
-  // TODO: write descriptions of parameters for output file
+  fs.writeComment("--------------------------------------------------------------------------------------");
   fs.writeComment("General saliency model parameters");
+  fs.writeComment("--------------------------------------------------------------------------------------");
   fs << "model"
      << "{";
-  fs.writeComment("Max LoG kernel window size. Set to -1 to use ~min(rows, cols)/4");
-  fs << "max_LoG_size" << pars.max_LoG_size;
+
+  fs.writeComment(
+    "Proportion of the image size used as the max LoG kernel size. "
+    "Each kernel will be half the size of the previous.");
+  fs << "max_LoG_prop" << pars.max_LoG_prop;
+
+  fs.writeComment(
+    "Number of LoG kernels. "
+    "Set to -1 to get as many kernels as possible, i.e., until the smallest size is reached. "
+    "Set to 0 to turn off all LoG convolutions.");
   fs << "n_LoG_kern" << pars.n_LoG_kern;
+
+  fs.writeComment(
+    "Window size for amount of blur applied to saliency map. "
+    "Set to -1 to use ~min(rows, cols) * .01.");
   fs << "gauss_blur_win" << pars.gauss_blur_win;
+
+  fs.writeComment("Increase global contrast between high/low saliency.");
   fs << "contrast_factor" << pars.contrast_factor;
+
+  fs.writeComment(
+    "Focal area proportion. "
+    "Proportion of image size used to attenuate outer edges of the image area.");
   fs << "central_focus_prop" << pars.central_focus_prop;
+
+  fs.writeComment(
+    "Threshold value to generate salient contours. "
+    "Should be between 0 and 255.");
   fs << "saliency_thresh" << pars.saliency_thresh;
+
+  fs.writeComment(
+    "Threshold multiplier. "
+    "Only for automized Otsu saliency threshold (i.e., saliency_thresh=-1).");
   fs << "saliency_thresh_mult" << pars.saliency_thresh_mult;
-  fs << "}";
+
+  fs << "}";  // end model parameters
 }
 
 void
 write_channel_parameters(cv::FileStorage &fs, const ChannelParameters &pars)
 {
-  // TODO: write descriptions of parameters for output file
-  fs.writeComment("List of feature channel parameters");
+  fs.writeComment("--------------------------------------------------------------------------------------");
+  fs.writeComment("List of parameters for each feature map channel");
+  fs.writeComment("--------------------------------------------------------------------------------------");
   fs << "feature_channels"
      << "{";
 
-  fs.writeComment("Luminance/Color parameters");
+  // chromatic feature maps -----------------------------------------------------------------------
+  fs.writeComment("Luminance/Color parameters --------------------------------------------------------");
+  fs << "color"
+     << "{";
+
+  fs.writeComment(
+    "Color space to use as starting point for extracting luminance and color. "
+    "Should be either \"DKL\", \"LAB\", or \"RGB\".");
   std::string cspace;
   switch (pars.color.cspace) {
     case color::ColorSpace::LAB: cspace = "LAB"; break;
     case color::ColorSpace::RGB: cspace = "RGB"; break;
-    default: cspace = "LAB";
+    case color::ColorSpace::DKL: cspace = "DKL"; break;
+    default: cspace = "DKL";
   }
-  fs << "color"
-     << "{"
-     << "colorspace" << cspace << "rescale" << pars.color.scale << "filter" << pars.color.shift << "weight"
-     << pars.color.weight << "}";
+  fs << "colorspace" << cspace;
 
-  fs.writeComment("Line orientation parameters");
-  auto gabor_win_size = pars.lines.gabor_pars.size.empty() ? -1 : pars.lines.gabor_pars.size.height;
+  fs.writeComment(
+    "Scale parameter (k) for logistic function. "
+    "Sharpens boundary between high/low intensity as value increases.");
+  fs << "rescale" << pars.color.scale;
+
+  fs.writeComment(
+    "Shift parameter (mu) for logistic function. "
+    "This threshold cuts lower level intensity as this value increases.");
+  fs << "filter" << pars.color.shift;
+
+  fs.writeComment(
+    "Weight applied to all pixels in each map/image. "
+    "Set to 0 to toggle channel off.");
+  fs << "weight" << pars.color.weight;
+
+  fs << "}";  // end color
+
+  // line orientations ----------------------------------------------------------------------------
+  fs.writeComment("Line orientation parameters -------------------------------------------------------");
   fs << "lines"
      << "{";
-  fs.writeComment("Kernel size for square gabor patches. Set to -1 to use ~min(rows, cols) * .02");
-  fs << "gabor_win_size" << gabor_win_size << "n_rotations" << (int)pars.lines.kernels.size() << "sigma"
-     << pars.lines.gabor_pars.sigma << "lambda" << pars.lines.gabor_pars.lambda << "psi" << pars.lines.gabor_pars.psi
-     << "gamma" << pars.lines.gabor_pars.gamma << "weight" << pars.lines.weight << "}";
 
-  fs.writeComment("Motion flicker parameters");
+  fs.writeComment(
+    "Kernel size for square gabor patches. "
+    "Set to -1 to use ~min(rows, cols) * .025");
+  auto gabor_win_size = pars.lines.gabor_pars.size.empty() ? -1 : pars.lines.gabor_pars.size.height;
+  fs << "gabor_win_size" << gabor_win_size;
+
+  fs.writeComment(
+    "Number of rotations used to create differently angled Gabor patches. "
+    "N rotations are split evenly between 0 and 2pi.");
+  fs << "n_rotations" << (int)pars.lines.kernels.size();
+
+  fs.writeComment(
+    "Sigma parameter for Gabor filter. "
+    "Adjusts frequency.");
+  fs << "sigma" << pars.lines.gabor_pars.sigma;
+
+  fs.writeComment(
+    "Lambda parameter for Gabor filter. "
+    "Adjusts width.");
+  fs << "lambda" << pars.lines.gabor_pars.lambda;
+
+  fs.writeComment(
+    "Psi parameter for Gabor filter. "
+    "Adjusts angle.");
+  fs << "psi" << pars.lines.gabor_pars.psi;
+
+  fs.writeComment(
+    "Gamma parameter for Gabor filter. "
+    "Adjusts ratio.");
+  fs << "gamma" << pars.lines.gabor_pars.gamma;
+
+  fs.writeComment(
+    "Weight applied to all pixels in each map/image. "
+    "Set to 0 to toggle channel off.");
+  fs << "weight" << pars.lines.weight;
+
+  fs << "}";  // end lines
+
+  // motion flicker -------------------------------------------------------------------------------
+  fs.writeComment("Motion flicker parameters ---------------------------------------------------------");
   fs << "flicker"
-     << "{"
-     << "lower_limit" << pars.flicker.lower_lim * 255 << "upper_limit" << pars.flicker.upper_lim * 255 << "weight"
-     << pars.flicker.weight << "}";
+     << "{";
 
-  fs.writeComment("Optical flow parameters");
-  auto flow_window_size = pars.flow.lk_win_size.empty() ? -1 : pars.flow.lk_win_size.height;
+  fs.writeComment(
+    "Cutoff value for minimum change in image contrast. "
+    "Value should be between 0 and 1.");
+  fs << "lower_limit" << pars.flicker.lower_lim;
 
+  fs.writeComment(
+    "Cutoff value for maximum change in image contrast. "
+    "Value should be between 0 and 1.");
+  fs << "upper_limit" << pars.flicker.upper_lim;
+
+  fs.writeComment(
+    "Weight applied to all pixels in each map/image. "
+    "Set to 0 to toggle channel off.");
+  fs << "weight" << pars.flicker.weight;
+
+  fs << "}";  // end flicker
+
+  // optical flow ---------------------------------------------------------------------------------
+  fs.writeComment("Optical flow parameters -----------------------------------------------------------");
   fs << "flow"
      << "{";
-  fs.writeComment("Size of square flow estimation window. Set to -1 to use ~min(rows, cols) * .125");
-  fs << "flow_window_size" << flow_window_size << "max_num_points" << pars.flow.max_n_pts << "min_point_dist"
-     << pars.flow.min_pt_dist << "morph_half_win" << (pars.flow.dilate_shape.rows - 1) / 2 << "morph_iters"
-     << pars.flow.dilate_iter << "weight" << pars.flow.weight << "}";
 
+  fs.writeComment(
+    "Size of square window for sparse flow estimation. "
+    "Set to -1 to use ~min(rows, cols) * .125. "
+    "Setting this to a smaller value generates higher flow intensity but at the cost of accuracy.");
+  auto flow_window_size = pars.flow.lk_win_size.empty() ? -1 : pars.flow.lk_win_size.height;
+  fs << "flow_window_size" << flow_window_size;
+
+  fs.writeComment("Maximum number of allotted points used to estimate flow between frames. ");
+  fs << "max_num_points" << pars.flow.max_n_pts;
+
+  fs.writeComment("Minimum distance between new points used to estimate flow. ");
+  fs << "min_point_dist" << pars.flow.min_pt_dist;
+
+  fs.writeComment("Half size of the dilation/erosion kernel used to expand flow points. ");
+  fs << "morph_half_win" << (pars.flow.dilate_shape.rows - 1) / 2;
+
+  fs.writeComment(
+    "Number of iterations for the morphology operations. "
+    "This will perform N dilations and N/2 erosion steps.");
+  fs << "morph_iters" << pars.flow.dilate_iter;
+
+  fs.writeComment(
+    "Weight applied to all pixels in each map/image. "
+    "Set to 0 to toggle channel off.");
+  fs << "weight" << pars.flow.weight;
+
+  fs << "}";  // end flow
+
+  // end feature_channels
   fs << "}";
 }
 
@@ -352,7 +491,6 @@ parameter_defaults(const std::string &yaml_file)
   // set to empty so that sizes can be determined by image
   pars.chan.flow.lk_win_size      = cv::Size();
   pars.chan.lines.gabor_pars.size = cv::Size();
-  pars.model.max_LoG_size         = -1;
   write_parameters(yaml_file, pars);
 }
 }  // namespace params

@@ -41,6 +41,22 @@ mean(const std::vector<T> &values)
   return average;
 }
 
+template<typename T>
+T
+max_elem(std::vector<T> vec)
+{
+  T max = *std::max_element(vec.begin(), vec.end());
+  return max;
+}
+
+template<typename T>
+T
+min_elem(std::vector<T> vec)
+{
+  T min = *std::min_element(vec.begin(), vec.end());
+  return min;
+}
+
 int
 str2int(const std::string &str)
 {
@@ -106,6 +122,17 @@ int
 mod_index(int number, int size_limit)
 {
   return ((number % size_limit) + size_limit) % size_limit;
+}
+
+template<typename T>
+std::vector<size_t>
+sorted_index(const std::vector<T> &vec)
+{
+  std::vector<size_t> idx(vec.size());
+  std::iota(idx.begin(), idx.end(), 0);
+  std::stable_sort(idx.begin(), idx.end(), [&vec](size_t i1, size_t i2) { return vec[i1] < vec[i2]; });
+
+  return idx;
 }
 
 uint

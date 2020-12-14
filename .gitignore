@@ -41,3 +41,4 @@ saliency/bin/*
 saliency/share/exports/*
 output
 export
+saliency_debug_parameters.yml

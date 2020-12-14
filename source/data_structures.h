@@ -98,6 +98,12 @@ struct FeatureMaps
   cv::Mat lines;
   cv::Mat flicker;
   cv::Mat flow;
+
+  [[nodiscard]] bool
+  is_empty() const
+  {
+    return (luminance.empty() && color.empty() && lines.empty() && flicker.empty() && flow.empty());
+  }
 };
 
 struct SaliencyMap
@@ -105,14 +111,17 @@ struct SaliencyMap
   cv::Mat map;
   cv::Mat image;
   cv::Mat map_8bit;
+  cv::Mat binary_img;
+  cv::Mat prev_map;
   double threshold;
   std::ofstream file;
-  std::vector<std::vector<cv::Point2i>> contours;
-  std::vector<cv::Point> salient_coords;
-  std::vector<double> salient_values;
-  cv::Scalar black{0, 0, 0};        // color of salient point
-  cv::Scalar magenta{255, 0, 255};  // color of salient contour
-  cv::Scalar cyan{255, 255, 0};     // color of other salient regions above threshold
+  std::vector<std::vector<cv::Point2i>> contours;  // contour maps for blobs greater than threshold
+  std::vector<float> salient_values;               // max saliency value within each blob/contour
+  std::vector<cv::Point> salient_coords;           // locations of max salient point for each blob/contour
+  std::vector<double> contour_size;                // number of pixels inside each salient blob/contour
+  cv::Scalar black{0, 0, 0};                       // color of salient point
+  cv::Scalar magenta{255, 0, 255};                 // color of salient contour
+  cv::Scalar cyan{255, 255, 0};                    // color of other salient regions above threshold
 };
 
 #endif  // SALIENCY_DATA_STRUCTURES_H

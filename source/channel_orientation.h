@@ -29,14 +29,10 @@ struct GaborParams
 
 // make several rotated gabor patches
 MatVec
-gabor_kernels(const GaborParams &gabor_pars)
+gabor_patches(const GaborParams &gabor_pars)
 {
-  MatVec kernels;
-  for (auto &theta : gabor_pars.theta) {
-    kernels.emplace_back(cv::getGaborKernel(
-      gabor_pars.size, gabor_pars.sigma, theta, gabor_pars.lambda, gabor_pars.gamma, gabor_pars.psi, CV_32FC1));
-  };
-  return kernels;
+  return imtools::kernels_gabor(
+    gabor_pars.theta, gabor_pars.size, gabor_pars.sigma, gabor_pars.lambda, gabor_pars.gamma, gabor_pars.psi);
 }
 
 struct Parameters
@@ -47,16 +43,16 @@ struct Parameters
   MatVec kernels;
   std::string debug_window_name = "LinesChannel";
 
-  explicit Parameters(int gabor_win_size = 15,
+  explicit Parameters(int gabor_win_size = 11,
                       int n_rotations    = 8,
-                      double sigma       = 3.5,
-                      double lambda      = 10,
-                      double psi         = 1.9635,
-                      double gamma       = 0.625,
+                      double sigma       = 1.625,
+                      double lambda      = 6,
+                      double psi         = 1.963495,
+                      double gamma       = 0.375,
                       float _weight      = 1)
     : gabor_pars(n_rotations, gabor_win_size, sigma, lambda, psi, gamma), weight(_weight)
   {
-    kernels = gabor_kernels(gabor_pars);
+    kernels = gabor_patches(gabor_pars);
   }
 };
 
@@ -65,8 +61,12 @@ detect(const cv::Mat &curr_32FC1_unit, const Parameters &pars)
 {
   MatVec line_images;
   if (!pars.toggled) return line_images;
-  line_images = imtools::convolve_all(curr_32FC1_unit, pars.kernels);
-  for (auto &&img : line_images) img = imtools::logistic(img, 1, 10, .2);
+  auto line_imgs_futr = imtools::convolve_all_async(curr_32FC1_unit, pars.kernels);
+  line_images         = imtools::capture_image_futures(line_imgs_futr);
+  for (auto &&img : line_images) {
+    imtools::gelu_approx<float>(img);
+    imtools::tanh<float>(img);
+  }
   if (pars.weight == 1) return line_images;
   for (auto &&img : line_images) img *= pars.weight;
   return line_images;
@@ -82,7 +82,7 @@ namespace debug {
   {
     auto *pars            = (lines::Parameters *)user_data;
     pars->gabor_pars.size = cv::Size(pos, pos);
-    pars->kernels         = lines::gabor_kernels(pars->gabor_pars);
+    pars->kernels         = lines::gabor_patches(pars->gabor_pars);
     cv::setTrackbarPos("Win Size", pars->debug_window_name, pos);
   }
 
@@ -91,7 +91,7 @@ namespace debug {
   {
     auto *pars             = (lines::Parameters *)user_data;
     pars->gabor_pars.sigma = static_cast<double>(pos) * 0.125;
-    pars->kernels          = lines::gabor_kernels(pars->gabor_pars);
+    pars->kernels          = lines::gabor_patches(pars->gabor_pars);
     cv::setTrackbarPos("Sigma", pars->debug_window_name, pos);
   }
 
@@ -100,7 +100,7 @@ namespace debug {
   {
     auto *pars              = (lines::Parameters *)user_data;
     pars->gabor_pars.lambda = static_cast<double>(pos) * 0.125;
-    pars->kernels           = lines::gabor_kernels(pars->gabor_pars);
+    pars->kernels           = lines::gabor_patches(pars->gabor_pars);
     cv::setTrackbarPos("Lambda", pars->debug_window_name, pos);
   }
 
@@ -109,7 +109,7 @@ namespace debug {
   {
     auto *pars           = (lines::Parameters *)user_data;
     pars->gabor_pars.psi = static_cast<double>(pos) * 0.125 * pi();
-    pars->kernels        = lines::gabor_kernels(pars->gabor_pars);
+    pars->kernels        = lines::gabor_patches(pars->gabor_pars);
     cv::setTrackbarPos("Psi", pars->debug_window_name, pos);
   }
 
@@ -118,7 +118,7 @@ namespace debug {
   {
     auto *pars             = (lines::Parameters *)user_data;
     pars->gabor_pars.gamma = static_cast<double>(pos) * 0.125;
-    pars->kernels          = lines::gabor_kernels(pars->gabor_pars);
+    pars->kernels          = lines::gabor_patches(pars->gabor_pars);
     cv::setTrackbarPos("Gamma", pars->debug_window_name, pos);
   }
 
@@ -144,7 +144,7 @@ namespace debug {
   create_trackbar(lines::debug::TrackbarPositions *notches, lines::Parameters *pars)
   {
     if (!pars->toggled) return;
-    cv::namedWindow(pars->debug_window_name);
+    cv::namedWindow(pars->debug_window_name, cv::WINDOW_NORMAL);
 
     cv::createTrackbar("Win Size", pars->debug_window_name, &notches->size, 50, &callback_size, pars);
     cv::setTrackbarMin("Win Size", pars->debug_window_name, 5);
@@ -198,11 +198,11 @@ namespace debug {
   kernels_to_images(const MatVec &kernels)
   {
     MatVec out_images;
-    for (auto &kern : kernels) {
-      cv::Mat k_alt = kern.clone().mul(128.) + 127.;
-      imtools::convert(k_alt, k_alt, CV_8UC1);
-      imtools::colorize_grey(k_alt, k_alt);
-      out_images.emplace_back(k_alt);
+    for (auto &kernel : kernels) {
+      cv::Mat kern_copy = kernel.clone();
+      imtools::unit_norm(kern_copy);
+      imtools::to_color(kern_copy, 255, 0, cv::COLORMAP_BONE);
+      out_images.emplace_back(kern_copy);
     }
     return out_images;
   }
@@ -211,7 +211,13 @@ namespace debug {
   orientations_to_images(const MatVec &orientations)
   {
     MatVec out_images;
-    for (auto &&i : orientations) out_images.emplace_back(imtools::colorize_32FC1U(i));
+    for (auto &&line_img : orientations) {
+      cv::Mat img = line_img.clone();
+      double min  = imtools::global_min(img);
+      img += min;
+      imtools::to_color(img, 255, 0, cv::COLORMAP_CIVIDIS);
+      out_images.emplace_back(img);
+    }
     return out_images;
   }
 
@@ -227,9 +233,10 @@ namespace debug {
     auto param_text = texify_pars(pars.gabor_pars);
 
     std::vector<cv::Mat> out_images;
+    cv::Scalar green(0, 255, 0);
     for (int i = 0; i < filtered_images.size(); ++i) {
-      auto image = imtools::blend_images_topleft(imtools::imresize(o_imgs[i], resize), k_imgs[i], 0.1);
-      imtools::add_text(image, param_text[i], k_imgs[i].rows);
+      auto image = imtools::blend_images_topleft(imtools::imresize(o_imgs[i], resize), k_imgs[i], 0);
+      imtools::add_text(image, param_text[i], k_imgs[i].rows, 2, 0.5, 1, green);
       out_images.emplace_back(image);
     }
 

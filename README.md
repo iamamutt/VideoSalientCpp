@@ -92,7 +92,7 @@ Specify different saliency parameters  using the `--par` option. If not specifie
 # General saliency model parameters
 model:
    # Max LoG kernel window size. Set to -1 to use ~min(rows, cols)/4
-   max_LoG_size: -1
+   max_LoG_prop: -1
    n_LoG_kern: -1
    gauss_blur_win: -1
    contrast_factor: 4.

@@ -38,10 +38,10 @@ struct Parameters
   std::vector<Point> points;        // final, processed point data
   std::string debug_window_name = "FlowChannel";
 
-  explicit Parameters(int flow_window_size    = 73,
-                      int max_num_points      = 150,
-                      double min_point_dist   = 8,
-                      unsigned morph_half_win = 3,
+  explicit Parameters(int flow_window_size    = 51,
+                      int max_num_points      = 200,
+                      double min_point_dist   = 15,
+                      unsigned morph_half_win = 6,
                       int morph_iters         = 8,
                       float _weight           = 1)
     : weight(_weight),
@@ -55,7 +55,7 @@ struct Parameters
     lk_win_size      = cv::Size(flow_window_size, flow_window_size);
     dilate_iter      = std::max(dilate_iter, 1);
     min_pt_dist      = std::max(min_pt_dist, 3.);
-    dilate_shape     = imtools::get_morph_shape(morph_half_win);
+    dilate_shape     = imtools::kernel_morph(morph_half_win);
     erode_iter       = static_cast<int>(std::max(.5 * dilate_iter, 1.));
     max_dist         = euclidean_dist(0, 0, lk_win_size.width, lk_win_size.height, .5);
   }
@@ -262,7 +262,7 @@ namespace debug {
   callback_morph_win(int pos, void *user_data)
   {
     auto *pars         = (flow::Parameters *)user_data;
-    pars->dilate_shape = imtools::get_morph_shape(pos);
+    pars->dilate_shape = imtools::kernel_morph(pos);
     cv::setTrackbarPos("Morph Size", pars->debug_window_name, pos);
   }
 
@@ -298,7 +298,7 @@ namespace debug {
   create_trackbar(flow::debug::TrackbarPositions *notches, flow::Parameters *pars)
   {
     if (!pars->toggled) return;
-    cv::namedWindow(pars->debug_window_name);
+    cv::namedWindow(pars->debug_window_name, cv::WINDOW_NORMAL);
 
     cv::createTrackbar("Win Size", pars->debug_window_name, &notches->lk_win_size, 50, &callback_lk_win, pars);
     cv::setTrackbarMin("Win Size", pars->debug_window_name, 5);

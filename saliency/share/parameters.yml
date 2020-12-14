@@ -1,44 +1,72 @@
 %YAML:1.0
 ---
+# --------------------------------------------------------------------------------------
 # General saliency model parameters
+# --------------------------------------------------------------------------------------
 model:
-   # Max LoG kernel window size. Set to -1 to use ~min(rows, cols)/4
-   max_LoG_size: -1
-   n_LoG_kern: -1
-   gauss_blur_win: -1
-   contrast_factor: 4.
-   central_focus_prop: 6.7000000000000004e-01
+   # Proportion of the image size used as the max LoG kernel size. Each kernel will be half the size of the previous.
+   max_LoG_prop: 5.0000000000000000e-01
+   # Number of LoG kernels. Set to -1 to get as many kernels as possible, i.e., until the smallest size is reached. Set to 0 to turn off all LoG convolutions.
+   n_LoG_kern: 3
+   # Window size for amount of blur applied to saliency map. Set to -1 to use ~min(rows, cols) * .01.
+   gauss_blur_win: 5
+   # Increase global contrast between high/low saliency.
+   contrast_factor: 2.
+   # Focal area proportion. Proportion of image size used to attenuate outer edges of the image area.
+   central_focus_prop: 6.3000000000000000e-01
+   # Threshold value to generate salient contours. Should be between 0 and 255.
    saliency_thresh: -1.
-   saliency_thresh_mult: 2.
-# List of feature channel parameters
+   # Threshold multiplier. Only for automized Otsu saliency threshold (i.e., saliency_thresh=-1).
+   saliency_thresh_mult: 1.5000000000000000e+00
+# --------------------------------------------------------------------------------------
+# List of parameters for each feature map channel
+# --------------------------------------------------------------------------------------
 feature_channels:
-   # Luminance/Color parameters
+   # Luminance/Color parameters --------------------------------------------------------
    color:
-      colorspace: LAB
-      rescale: 6.
-      filter: 5.0000000000000000e-01
+      # Color space to use as starting point for extracting luminance and color. Should be either "DKL", "LAB", or "RGB".
+      colorspace: DKL
+      # Scale parameter (k) for logistic function. Sharpens boundary between high/low intensity as value increases.
+      rescale: 1.
+      # Shift parameter (mu) for logistic function. This threshold cuts lower level intensity as this value increases.
+      filter: 0.
+      # Weight applied to all pixels in each map/image. Set to 0 to toggle channel off.
       weight: 1.
-   # Line orientation parameters
+   # Line orientation parameters -------------------------------------------------------
    lines:
-      # Kernel size for square gabor patches. Set to -1 to use ~min(rows, cols) * .02
+      # Kernel size for square gabor patches. Set to -1 to use ~min(rows, cols) * .025
       gabor_win_size: -1
+      # Number of rotations used to create differently angled Gabor patches. N rotations are split evenly between 0 and 2pi.
       n_rotations: 8
-      sigma: 3.5000000000000000e+00
-      lambda: 10.
-      psi: 1.9635000000000000e+00
-      gamma: 6.2500000000000000e-01
+      # Sigma parameter for Gabor filter. Adjusts frequency.
+      sigma: 1.6250000000000000e+00
+      # Lambda parameter for Gabor filter. Adjusts width.
+      lambda: 6.
+      # Psi parameter for Gabor filter. Adjusts angle.
+      psi: 1.9634950000000000e+00
+      # Gamma parameter for Gabor filter. Adjusts ratio.
+      gamma: 3.7500000000000000e-01
+      # Weight applied to all pixels in each map/image. Set to 0 to toggle channel off.
       weight: 1.
-   # Motion flicker parameters
+   # Motion flicker parameters ---------------------------------------------------------
    flicker:
-      lower_limit: 32.
-      upper_limit: 255.
+      # Cutoff value for minimum change in image contrast. Value should be between 0 and 1.
+      lower_limit: 2.0000000298023224e-01
+      # Cutoff value for maximum change in image contrast. Value should be between 0 and 1.
+      upper_limit: 1.
+      # Weight applied to all pixels in each map/image. Set to 0 to toggle channel off.
       weight: 1.
-   # Optical flow parameters
+   # Optical flow parameters -----------------------------------------------------------
    flow:
-      # Size of square flow estimation window. Set to -1 to use ~min(rows, cols) * .125
+      # Size of square window for sparse flow estimation. Set to -1 to use ~min(rows, cols) * .125. Setting this to a smaller value generates higher flow intensity but at the cost of accuracy.
       flow_window_size: -1
-      max_num_points: 150
-      min_point_dist: 8.
-      morph_half_win: 3
+      # Maximum number of allotted points used to estimate flow between frames. 
+      max_num_points: 200
+      # Minimum distance between new points used to estimate flow. 
+      min_point_dist: 15.
+      # Half size of the dilation/erosion kernel used to expand flow points. 
+      morph_half_win: 6
+      # Number of iterations for the morphology operations. This will perform N dilations and N/2 erosion steps.
       morph_iters: 8
+      # Weight applied to all pixels in each map/image. Set to 0 to toggle channel off.
       weight: 1.

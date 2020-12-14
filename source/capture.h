@@ -68,7 +68,7 @@ initialize_img(const std::string &image_file)
 {
   cv::Mat source_image = cv::imread(image_file);
   if (source_image.empty()) {
-    std::cerr << "\n!!Could not load input image\n"
+    std::cerr << "\n!!Failed to load image file: " << image_file << "\n"
               << "- Use option -img=\"path/to/image/file\"\n"
               << "- See program help (-h) for argument input usage\n"
               << std::endl;

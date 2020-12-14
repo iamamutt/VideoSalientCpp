@@ -11,7 +11,7 @@ struct AllTrackbarPositions
   lines::debug::TrackbarPositions lines;
   flick::debug::TrackbarPositions flicker;
   flow::debug::TrackbarPositions flow;
-  sal::debug::TrackbarPositions features;
+  saliency::debug::TrackbarPositions features;
 };
 
 namespace preprocess {
@@ -26,13 +26,13 @@ create_trackbars(const CmdLineOpts &opts, Parameters *pars, AllTrackbarPositions
   debug_bar_positions->lines    = lines::debug::TrackbarPositions(pars->chan.lines);
   debug_bar_positions->flicker  = flick::debug::TrackbarPositions(pars->chan.flicker);
   debug_bar_positions->flow     = flow::debug::TrackbarPositions(pars->chan.flow);
-  debug_bar_positions->features = sal::debug::TrackbarPositions(pars->model);
+  debug_bar_positions->features = saliency::debug::TrackbarPositions(pars->model);
 
   color::debug::create_trackbar(&debug_bar_positions->color, &pars->chan.color);
   lines::debug::create_trackbar(&debug_bar_positions->lines, &pars->chan.lines);
   flick::debug::create_trackbar(&debug_bar_positions->flicker, &pars->chan.flicker);
   flow::debug::create_trackbar(&debug_bar_positions->flow, &pars->chan.flow);
-  sal::debug::create_trackbar(&debug_bar_positions->features, &pars->model);
+  saliency::debug::create_trackbar(&debug_bar_positions->features, &pars->model);
 }
 
 void
@@ -52,23 +52,28 @@ init_frame_start_stop_status(Source &src)
 SaliencyMap
 setup_saliency_data(const Source &src)
 {
-  SaliencyMap saliency;
+  SaliencyMap map_data;
 
   // saliency map as float array
-  saliency.map = imtools::make_black(src.dim.size);
+  map_data.map = imtools::make_black(src.dim.size);
+
+  // binary threshold image
+  map_data.binary_img = imtools::make_black(src.dim.size, CV_8UC1);
 
   // final exported colorized frame
-  saliency.image = imtools::make_black(src.dim.size, CV_8UC3);
+  map_data.image = imtools::make_black(src.dim.size, CV_8UC3);
 
   if (src.status.export_enabled) {
-    auto csv_file       = normalize_path(src.opts.out_dir, "saliency_data.csv");
-    saliency.file       = std::ofstream(csv_file);
-    Strings header_cols = {"frame", "contour_thresh", "contour_num", "pt_x", "pt_y", "salient_value"};
-    write_csv_header(saliency.file, header_cols);
-    saliency.file << std::fixed << std::setprecision(5);
+    auto csv_file = normalize_path(src.opts.out_dir, "saliency_data.csv");
+    map_data.file = std::ofstream(csv_file);
+
+    Strings header_cols = {"frame",        "img_width", "img_height", "saliency_thresh", "contour_num",
+                           "contour_size", "pt_x",      "pt_y",       "salient_value"};
+    write_csv_header(map_data.file, header_cols);
+    map_data.file << std::fixed << std::setprecision(5);
   }
 
-  return saliency;
+  return map_data;
 }
 
 cv::VideoWriter
@@ -174,7 +179,9 @@ setup_windows(Source &src, Parameters &pars)
   auto lines_rect = cv::Rect(lines_pos, src.dim.resize);
   cv::Rect(cv::Point(main_rect.width + main_rect.x + 1, main_rect.y), src.dim.resize);
   if (pars.chan.lines.toggled) {
-    src.layouts.lines = imtools::setup_window_layout(4, 2, lines_rect, pars.chan.lines.debug_window_name);
+    auto n_show       = static_cast<double>(pars.chan.lines.kernels.size());
+    auto n_l_row      = static_cast<int>(std::ceil(n_show / 4.));
+    src.layouts.lines = imtools::setup_window_layout(4, n_l_row, lines_rect, pars.chan.lines.debug_window_name);
     lines_rect        = cv::getWindowImageRect(src.layouts.lines.winname);
   } else {
     lines_rect.width  = 0;

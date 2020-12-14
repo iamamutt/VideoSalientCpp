@@ -30,10 +30,10 @@ run_program(int argc, const char *const *argv)
   while (!src.status.end_program) {
     if (src.status.start_detection) {
       // detect saliency from source images and update intermediate map data
-      sal::detect(src, pars, sep_channel_images, feature_maps, saliency_map);
+      saliency::detect(src, pars, sep_channel_images, feature_maps, saliency_map);
 
       // collect summary data from saliency map
-      sal::analyze(saliency_map, pars.model);
+      saliency::analyze(saliency_map, pars.model);
 
       // save output data
       postprocess::write_data(src, saliency_map);
@@ -46,7 +46,7 @@ run_program(int argc, const char *const *argv)
     cap::update_source(src);
 
     // check if ending criteria met
-    postprocess::continue_program(src);
+    postprocess::continue_program(src, pars);
   }
 
   // write model parameters to file if output directory option exists

@@ -2,7 +2,7 @@
     bottom-up saliency model
     @file main.cpp
     @author Joseph M. Burling
-    @version v0.1.1 11/24/2020
+    @version v0.1.2 12/14/2020
 */
 
 #include "program.h"

@@ -10,14 +10,66 @@
 
 namespace imtools {
 
-void
-print_image_value_info(const cv::Mat &image)
+uchar
+mat_depth(const cv::Mat &mat)
 {
-  double min_v, max_v;
-  cv::minMaxLoc(image, &min_v, &max_v);
-  auto mean_v = cv::mean(image);
-  std::cout << "w=" << image.rows << ",h=" << image.cols << "  mean=" << mean_v << ", min=" << min_v
-            << ", max=" << max_v << std::endl;
+  return mat.type() & CV_MAT_DEPTH_MASK;
+}
+
+uchar
+n_channels(const cv::Mat &mat)
+{
+  return 1 + (mat.type() >> CV_CN_SHIFT);
+}
+
+std::string
+mat_type(const cv::Mat &mat)
+{
+  std::string t, a;
+  uchar depth    = mat_depth(mat);
+  uchar channels = n_channels(mat);
+
+  switch (depth) {
+    case CV_8U:
+      t = "8U";
+      a = "Mat.at<uchar>(r,c)";
+      break;
+    case CV_8S:
+      t = "8S";
+      a = "Mat.at<schar>(r,c)";
+      break;
+    case CV_16U:
+      t = "16U";
+      a = "Mat.at<ushort>(r,c)";
+      break;
+    case CV_16S:
+      t = "16S";
+      a = "Mat.at<short>(r,c)";
+      break;
+    case CV_32S:
+      t = "32S";
+      a = "Mat.at<int>(r,c)";
+      break;
+    case CV_32F:
+      t = "32F";
+      a = "Mat.at<float>(r,c)";
+      break;
+    case CV_64F:
+      t = "64F";
+      a = "Mat.at<double>(r,c)";
+      break;
+    default:
+      t = "User";
+      a = "Mat.at<UKNOWN>(r,c)";
+      break;
+  };
+
+  t += "C";
+  t += (channels + '0');
+
+  std::cout << "Mat is of type " << t << " and should be accessed with " << a << std::endl;
+
+  return t;
 }
 
 cv::Mat
@@ -34,10 +86,10 @@ make_black(const cv::Size &dims, int type = CV_32FC1)
 
 // convert grayscale image to bgr
 cv::Mat
-gray_to_bgr(const cv::Mat &IC1, int type = CV_8UC3)
+mat_to_bgr(const cv::Mat &IC1, int type = CV_8UC3)
 {
-  cv::Mat gray_copy = IC1.clone();
-  cv::Mat layers[3] = {gray_copy, gray_copy, gray_copy};
+  cv::Mat mat_copy  = IC1.clone();
+  cv::Mat layers[3] = {mat_copy, mat_copy, mat_copy};
   cv::Mat bgr;
   cv::merge(layers, 3, bgr);
   bgr.convertTo(bgr, type);
@@ -65,6 +117,15 @@ void
 flatten(const cv::Mat &bgr, cv::Mat &dst)
 {
   cv::cvtColor(bgr, dst, cv::COLOR_BGR2GRAY);
+}
+
+cv::Mat
+mat_to_row_arr(const cv::Mat &image)
+{
+  uint n_elem = image.total() * image.channels();
+  cv::Mat arr = image.reshape(1, n_elem);
+  if (!image.isContinuous()) arr = arr.clone();
+  return arr;
 }
 
 void
@@ -109,23 +170,30 @@ unit_clamp(cv::Mat &image)
 }
 
 void
-unit_norm(cv::Mat &image)
+unit_norm(cv::Mat &image, cv::InputArray &mask = cv::noArray())
 {
-  cv::normalize(image, image, 0., 1., cv::NORM_MINMAX);
+  cv::normalize(image, image, 0., 1., cv::NORM_MINMAX, -1, mask);
 }
 
 void
-l1_norm(cv::Mat &image)
+l0_norm(cv::Mat &image, cv::InputArray &mask = cv::noArray())
 {
-  // image / sum(abs(i)) for each i
-  cv::normalize(image, image, 1., 0., cv::NORM_L1);
+  // image / max(abs(i) for each i)
+  cv::normalize(image, image, 1., 0., cv::NORM_INF, -1, mask);
 }
 
 void
-l0_norm(cv::Mat &image)
+l1_norm(cv::Mat &image, cv::InputArray &mask = cv::noArray())
 {
-  // image / max(abs(i)) for each i
-  cv::normalize(image, image, 1., 0., cv::NORM_INF);
+  // image / sum(abs(i) for each i)
+  cv::normalize(image, image, 1., 0., cv::NORM_L1, -1, mask);
+}
+
+void
+l2_norm(cv::Mat &image, cv::InputArray &mask = cv::noArray())
+{
+  // image / sum(i^2 for each i)
+  cv::normalize(image, image, 1., 0., cv::NORM_L2, -1, mask);
 }
 
 void
@@ -135,6 +203,13 @@ std_norm(cv::Mat image)
   cv::meanStdDev(image, mu, sigma);
   image -= mu;
   image /= sigma;
+}
+
+void
+unit_flt_to_zero_center(cv::Mat &float_img)
+{
+  cv::subtract(float_img, 0.5f, float_img);
+  cv::multiply(float_img, 2.f, float_img);
 }
 
 cv::Scalar
@@ -220,14 +295,14 @@ abs_diff_reduce(const MatVec &imgs)
 }
 
 cv::Mat
-convert(const cv::Mat &src, cv::Mat &dst, int type = -1, double scale = 1., double shift = 0.)
+convert(const cv::Mat &src, cv::Mat &dst, int type = -1, double scale = 1, double shift = 0)
 {
   src.convertTo(dst, type, scale, shift);
   return dst;
 }
 
 cv::Mat
-convert(const cv::Mat &image, int type = -1, double scale = 1., double shift = 0.)
+convert(const cv::Mat &image, int type = -1, double scale = 1, double shift = 0)
 {
   cv::Mat out_img;
   return convert(image, out_img, type, scale, shift);
@@ -245,18 +320,18 @@ convert_8UC3_to_32FC3U(const cv::Mat &I8UC3, cv::Mat &dst)
   I8UC3.convertTo(dst, CV_32FC3, 1. / 255.);
 }
 
+void
+to_color(cv::Mat &mat, double scale = 1, double shift = 0, cv::ColormapTypes cmap = cv::COLORMAP_VIRIDIS)
+{
+  convert(mat, mat, CV_8UC1, scale, shift);
+  cv::applyColorMap(mat, mat, cmap);
+};
+
 cv::Mat
 colorize_grey(const cv::Mat &I8UC1, cv::Mat &dst)
 {
   cv::applyColorMap(I8UC1, dst, cv::COLORMAP_VIRIDIS);
   return dst;
-}
-
-cv::Mat
-colorize_grey(const cv::Mat &I8UC1)
-{
-  cv::Mat dst;
-  return colorize_grey(I8UC1, dst);
 }
 
 cv::Mat
@@ -268,15 +343,37 @@ colorize_32FC1U(const cv::Mat &I32FC1U)
   return dst;
 }
 
-cv::Mat
-tanh(const cv::Mat &img_32F)
+template<typename T>
+void
+tanh(cv::Mat &mat)
 {
-  // input image should be floating type, no checking is done
-  cv::Mat dst = img_32F.clone();
-  dst *= 2.;
-  clamp(dst, -80, 80);  // avoid overflow from exp
-  cv::exp(dst, dst);
-  return (dst - 1.) / (dst + 1.);
+  for (int r = 0; r < mat.rows; ++r) {
+    for (int c = 0; c < mat.cols; ++c) {
+      mat.at<T>(r, c) = static_cast<T>(std::tanh(static_cast<double>(mat.at<T>(r, c))));
+    }
+  }
+}
+
+template<typename T>
+void
+gelu_approx(cv::Mat &mat)
+{
+  for (int r = 0; r < mat.rows; ++r) {
+    for (int c = 0; c < mat.cols; ++c) {
+      double val = static_cast<double>(mat.at<T>(r, c));
+      double out = val * .5 * (1 + std::tanh(0.7978846 * (val + 0.044715 * std::pow(val, 3.))));
+
+      mat.at<T>(r, c) = static_cast<T>(out);
+    }
+  }
+}
+
+void
+truncated_logit(cv::Mat &img_unit, float min = 1e-6)
+{
+  img_unit.setTo(min, img_unit < min);
+  img_unit.setTo(1.f - min, img_unit > (1.f - min));
+  cv::log(img_unit / (1.f - img_unit), img_unit);
 }
 
 cv::Mat
@@ -351,11 +448,12 @@ cross_convolve(const MatVec &I32FC_vec, const MatVec &kernels)
 }
 
 VecFutureMats
-convolve_async(const cv::Mat &I32FC, const MatVec &float_kernels)
+convolve_all_async(const cv::Mat &I32FC, const MatVec &float_kernels)
 {
   VecFutureMats future_images;
 
   if (float_kernels.empty()) {
+    // return image as is
     future_images.emplace_back(std::async(
       std::launch::async,
       [](const cv::Mat &flt_img) -> cv::Mat {
@@ -383,7 +481,7 @@ std::vector<VecFutureMats>
 cross_convolve_async(const MatVec &I32FC_vec, const MatVec &kernels)
 {
   std::vector<VecFutureMats> vec_of_fut_mat_vecs;
-  for (auto &&image : I32FC_vec) vec_of_fut_mat_vecs.emplace_back(convolve_async(image, kernels));
+  for (auto &&image : I32FC_vec) vec_of_fut_mat_vecs.emplace_back(convolve_all_async(image, kernels));
   return vec_of_fut_mat_vecs;
 }
 
@@ -411,6 +509,61 @@ capture_image_futures(std::vector<VecFutureMats> &futures)
   return vec_of_img_vecs;
 }
 
+double
+global_min(const cv::Mat &img, cv::InputArray &mask = cv::noArray())
+{
+  double min_val;
+  cv::minMaxLoc(img, &min_val, nullptr, nullptr, nullptr, mask);
+  return min_val;
+}
+
+double
+global_max(const cv::Mat &img, cv::InputArray &mask = cv::noArray())
+{
+  double max_val;
+  cv::minMaxLoc(img, nullptr, &max_val, nullptr, nullptr, mask);
+  return max_val;
+}
+
+cv::Vec<double, 2>
+global_range(const cv::Mat &img, cv::InputArray &mask = cv::noArray())
+{
+  cv::Vec<double, 2> range;
+  cv::minMaxLoc(img, &range[0], &range[1], nullptr, nullptr, mask);
+  return range;
+}
+
+double
+global_median(const cv::Mat &image)
+{
+  auto row_mat = mat_to_row_arr(image);
+  std::vector<double> vec_data;
+  row_mat.copyTo(vec_data);
+  std::nth_element(vec_data.begin(), vec_data.begin() + vec_data.size() / 2, vec_data.end());
+  return vec_data[vec_data.size() / 2];
+}
+
+// find min absolute value from corner pixels of an image
+template<typename T>
+T
+find_min_corner(const cv::Mat &mat)
+{
+  auto size = mat.size();
+
+  std::vector<T> corner_values = {mat.at<T>(0, 0),                              // TL
+                                  mat.at<T>(0, size.width - 1),                 // TR
+                                  mat.at<T>(size.height - 1, 0),                // BL
+                                  mat.at<T>(size.height - 1, size.width - 1)};  // BR
+
+  // corner_values assumed to be near 0, find which is closest to center and shift
+  T min_corner = corner_values[0];
+  for (int i = 1; i < 4; ++i) {
+    if (abs(corner_values[i]) < abs(min_corner)) min_corner = corner_values[i];
+  }
+
+  return min_corner;
+}
+
 cv::Mat
 kernel_gauss_1d(int k, double sigma = -1)
 {
@@ -430,28 +583,12 @@ kernel_gauss_2d(int x, double sigma_x = -1, int y = -1, double sigma_y = -1)
 }
 
 cv::Mat
-get_border_mask(int width, int height, double p = 1, float scale = 5)
-{
-  p = std::max(p, .01);
-
-  auto sigma_x = sigma_prop_k(width, p);
-  auto sigma_y = sigma_prop_k(height, p);
-  auto mask    = kernel_gauss_2d(width, sigma_x, height, sigma_y);
-
-  l0_norm(mask);
-  mask = tanh(mask * scale);
-  unit_norm(mask);
-
-  return mask;
-}
-
-cv::Mat
-mexican_hat_kernel(int k, double sigma = 1.4)
+kernel_mexican_hat(int k, double sigma = 1.4, double qr = 5)
 {
   k              = std::max(k, 5);
   sigma          = std::max(sigma, .01);
   cv::Mat kern   = cv::Mat::zeros(k, k, CV_32FC1);
-  auto quantiles = linspace(-5., 5., k);
+  auto quantiles = linspace(-1. * qr, qr, k);
   double dens;
   for (int x = 0; x < k; ++x) {
     for (int y = 0; y < k; ++y) {
@@ -462,9 +599,29 @@ mexican_hat_kernel(int k, double sigma = 1.4)
   return kern;
 }
 
+MatVec
+kernels_gabor(const std::vector<double> &radians,
+              const cv::Size &size,
+              const double &sigma,
+              const double &lambda,
+              const double &gamma,
+              const double &psi)
+{
+  MatVec kernels;
+  if (radians.empty()) return kernels;
+
+  for (auto &theta : radians) {
+    cv::Mat kernel = cv::getGaborKernel(size, sigma, theta, lambda, gamma, psi, CV_32FC1);
+    kernel -= find_min_corner<float>(kernel);
+    kernels.push_back(kernel);
+  };
+
+  return kernels;
+}
+
 // make pyramid stack of laplacian of gaussian kernels
 MatVec
-LoG_kernels(int max_size, int n = -1)
+kernels_lap_of_gauss(int max_size, int n = -1)
 {
   MatVec kernels;
   if (max_size <= 0 || n == 0) return kernels;
@@ -479,39 +636,58 @@ LoG_kernels(int max_size, int n = -1)
   for (int i = 0; i < n; ++i) {
     odd_int(next_size);
     if (next_size < min_size) break;
-    kernels.emplace_back(mexican_hat_kernel(next_size));
+    kernels.emplace_back(kernel_mexican_hat(next_size));
     next_size /= 2;
   }
 
   // adjust kernel density
   for (auto &&kern : kernels) {
-    imtools::l1_norm(kern);
-    kern *= pow(log(static_cast<float>((kern.rows + min_size))), 2.f);
+    auto adj = find_min_corner<float>(kern);
+    kern -= adj;
+    imtools::l2_norm(kern);
+    kern *= (1. / sqrt(static_cast<float>(kern.rows)));
   }
 
   return kernels;
 }
 
-// get filter for dilation/erosion
+// get kernel for dilation/erosion
 cv::Mat
-get_morph_shape(uint half_size)
+kernel_morph(uint half_size, const cv::MorphShapes &shape = cv::MORPH_ELLIPSE)
 {
   auto k = 2 * half_size + 1;
-  return cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(k, k), cv::Point(half_size, half_size));
+  return cv::getStructuringElement(shape, cv::Size(k, k), cv::Point(half_size, half_size));
+}
+
+cv::Mat
+get_border_mask(int width, int height, double p = 1, float scale = 5)
+{
+  p = std::max(p, .01);
+
+  auto sigma_x = sigma_prop_k(width, p);
+  auto sigma_y = sigma_prop_k(height, p);
+  auto mask    = kernel_gauss_2d(width, sigma_x, height, sigma_y);
+
+  l0_norm(mask);
+  mask *= scale;
+  tanh<float>(mask);
+  unit_norm(mask);
+
+  return mask;
 }
 
 double
-get_otsu_thresh_value(const cv::Mat &_src)
+get_otsu_thresh_value(const cv::Mat &mat)
 {
-  cv::Size size = _src.size();
-  if (_src.isContinuous()) {
+  cv::Size size = mat.size();
+  if (mat.isContinuous()) {
     size.width *= size.height;
     size.height = 1;
   }
   const int N = 256;
   int i, j, h[N] = {0};
   for (i = 0; i < size.height; i++) {
-    const uchar *src = _src.data + _src.step * i;
+    const uchar *src = mat.data + mat.step * i;
     for (j = 0; j <= size.width - 4; j += 4) {
       int v0 = src[j], v1 = src[j + 1];
       h[v0]++;
@@ -574,83 +750,6 @@ get_image_dims(const cv::Mat &image, double base_size = 240., bool print = false
   return dims;
 }
 
-uchar
-mat_depth(const cv::Mat &mat)
-{
-  return mat.type() & CV_MAT_DEPTH_MASK;
-}
-
-uchar
-n_channels(const cv::Mat &mat)
-{
-  return 1 + (mat.type() >> CV_CN_SHIFT);
-}
-
-std::string
-mat_type(const cv::Mat &mat)
-{
-  std::string t, a;
-  uchar depth    = mat_depth(mat);
-  uchar channels = n_channels(mat);
-
-  switch (depth) {
-    case CV_8U:
-      t = "8U";
-      a = "Mat.at<uchar>(r,c)";
-      break;
-    case CV_8S:
-      t = "8S";
-      a = "Mat.at<schar>(r,c)";
-      break;
-    case CV_16U:
-      t = "16U";
-      a = "Mat.at<ushort>(r,c)";
-      break;
-    case CV_16S:
-      t = "16S";
-      a = "Mat.at<short>(r,c)";
-      break;
-    case CV_32S:
-      t = "32S";
-      a = "Mat.at<int>(r,c)";
-      break;
-    case CV_32F:
-      t = "32F";
-      a = "Mat.at<float>(r,c)";
-      break;
-    case CV_64F:
-      t = "64F";
-      a = "Mat.at<double>(r,c)";
-      break;
-    default:
-      t = "User";
-      a = "Mat.at<UKNOWN>(r,c)";
-      break;
-  };
-
-  t += "C";
-  t += (channels + '0');
-
-  std::cout << "Mat is of type " << t << " and should be accessed with " << a << std::endl;
-
-  return t;
-}
-
-template<typename T>
-void
-print_elem_data(const cv::Mat &mat)
-{
-  mat_type(mat);
-  for (int y = 0; y < mat.rows; y++) {
-    for (int x = 0; x < mat.cols; x++) {
-      auto elem = static_cast<double>(mat.at<T>(y, x));
-      std::cout << elem << " | ";
-    }
-    std::cout << "\n";
-  }
-  std::cout << std::endl;
-}
-
 template<typename T = float>
 cv::Mat
 get_test_img(int rows = 5, int cols = 5, double start = 0., double stop = 255.)
@@ -667,6 +766,47 @@ get_test_img(int rows = 5, int cols = 5, double start = 0., double stop = 255.)
   }
   // returns single channel image
   return matrix;
+}
+
+template<typename T>
+void
+print_elem_data(const cv::Mat &mat)
+{
+  if (mat.channels() != 1) {
+    std::cout << "!!Warning: elem printing only for 1 channel mat" << std::endl;
+    return;
+  }
+
+  mat_type(mat);
+  for (int y = 0; y < mat.rows; y++) {
+    for (int x = 0; x < mat.cols; x++) {
+      auto elem = static_cast<double>(mat.at<T>(y, x));
+      std::cout << elem << " | ";
+    }
+    std::cout << "\n";
+  }
+  std::cout << std::endl;
+}
+
+void
+print_image_value_info(const cv::Mat &image)
+{
+  cv::Scalar mu, sigma;
+  cv::meanStdDev(image, mu, sigma);
+  auto range = global_range(image);
+  auto med   = global_median(image);
+  std::cout << "size=" << image.size() << ", range=" << range << ",  median=" << med << ",  mean=" << mu
+            << ", sd=" << sigma << std::endl;
+}
+
+void
+debug_image_flt_unit(const cv::Mat &img, std::string win_name = "IMAGE_DEBUG", int ms_wait = 1)
+{
+  cv::Mat mat = img.clone();
+  unit_norm(mat);
+  mat = colorize_32FC1U(mat);
+  cv::imshow(win_name, mat);
+  if (ms_wait != -1) cv::waitKey(ms_wait);
 }
 
 cv::Mat
@@ -695,6 +835,8 @@ setup_image_layout(const MatVec &mat_vec,
                    std::string window_name = "Unnamed Window")
 {
   DisplayData display;
+  if (mat_vec.empty()) return display;
+
   display.scale   = scale;
   display.winname = std::move(window_name);
 
@@ -825,7 +967,7 @@ setup_window_layout(const cv::Size &size,
 {
   auto img = imtools::make_black(size, CV_8UC3);
   MatVec imgs;
-  for (int i = 0; i < rows * cols; ++i) imgs.emplace_back(img);
+  for (int i = 0; i < abs(rows * cols); ++i) imgs.emplace_back(img);
   auto layout = imtools::setup_image_layout(imgs, cols, rows, 1, window_name);
   if (show) {
     imtools::show_layout_imgs(imgs, layout);
@@ -859,7 +1001,13 @@ blend_images_topleft(const cv::Mat &main_img, const cv::Mat &sub_img, double alp
 }
 
 void
-add_text(cv::Mat &image, const Strings &text, int y_px = 1, int x_px = 2, double scale = 0.5, int thickness = 1)
+add_text(cv::Mat &image,
+         const Strings &text,
+         int y_px                = 1,
+         int x_px                = 2,
+         double scale            = 0.5,
+         int thickness           = 1,
+         const cv::Scalar &color = cv::Scalar::all(255))
 {
   if (text.empty()) return;
 
@@ -871,17 +1019,22 @@ add_text(cv::Mat &image, const Strings &text, int y_px = 1, int x_px = 2, double
 
   for (auto &line : text) {
     cv::Point txt_ps(x_px, y_px);
-    cv::putText(
-      image, line, txt_ps, cv::FONT_HERSHEY_SIMPLEX, scale, cv::Scalar::all(255), thickness, cv::LINE_AA, false);
+    cv::putText(image, line, txt_ps, cv::FONT_HERSHEY_SIMPLEX, scale, color, thickness, cv::LINE_AA, false);
     y_px += sz.height + thickness * 2;
   }
 }
 
 void
-add_text(cv::Mat &image, std::string text, int y_px = 1, int x_px = 2, double scale = 0.5, int thickness = 1)
+add_text(cv::Mat &image,
+         std::string text,
+         int y_px                = 1,
+         int x_px                = 2,
+         double scale            = 0.5,
+         int thickness           = 1,
+         const cv::Scalar &color = cv::Scalar::all(255))
 {
   Strings vec = {std::move(text)};
-  add_text(image, vec, y_px, x_px, scale, thickness);
+  add_text(image, vec, y_px, x_px, scale, thickness, color);
 }
 
 int
@@ -896,14 +1049,13 @@ four_cc_str_to_int(std::string fourcc)
 }
 
 bool
-win_opened(int key,
-           int ms,
-           bool *button_pressed          = nullptr,
+win_opened(const int &key_pressed,
+           const int &esc_key,
+           const bool *button_pressed    = nullptr,
            bool check_button             = false,
            const std::string &check_name = "")
 {
-  auto key_code         = cv::waitKey(ms);
-  bool non_stopping_key = key_code != key;
+  bool non_stopping_key = key_pressed != esc_key;
 
   if (check_button) {
     return non_stopping_key && !*button_pressed;
