@@ -1,7 +1,7 @@
 #ifndef SALIENCY_IMAGE_TOOLS_H
 #define SALIENCY_IMAGE_TOOLS_H
 
-#include "data_structures.h"
+#include "shared_objects.h"
 #include "tools.h"
 #include <iostream>
 #include <numeric>
@@ -224,7 +224,7 @@ sum_non_zero(cv::Mat &mat)
 cv::Mat
 sum_images(const MatVec &I32FC1U)
 {
-  // all images must be the same size
+  // all images must be the same kern_size
   if (I32FC1U.empty()) return cv::Mat(0, 0, CV_32FC1);
   cv::Mat dst = make_black(I32FC1U[0], CV_32FC1);
   for (auto &img : I32FC1U) dst += img;
@@ -352,6 +352,52 @@ tanh(cv::Mat &mat)
       mat.at<T>(r, c) = static_cast<T>(std::tanh(static_cast<double>(mat.at<T>(r, c))));
     }
   }
+}
+
+cv::Mat
+lms_inv(const cv::Mat &row_mat = cv::Mat(0, 0, CV_32FC3))
+{
+  // row-wise allocation, matrix is for BGR ordered images
+  cv::Mat lms = (cv::Mat_<float>(
+    {0.09920825, 0.64933633, 0.25145542, -0.23151325, -0.55586618, 0.78737943, -0.90495899, 0.63933074, 0.26562825}));
+
+  lms = lms.reshape(1, 3);
+
+  if (row_mat.empty()) return lms;
+
+  return lms * row_mat;
+}
+
+auto
+bgr32FC3U_to_DKL(const cv::Mat &I32FC3U)
+{
+  // converts MxNx3 image to 3x(M*N)
+  cv::Mat row_mat = I32FC3U.reshape(3, I32FC3U.total()).reshape(1).t();
+
+  // transformation
+  auto dkl = lms_inv(row_mat);
+
+  // luminance, long (~red) + medium (~green) cone response
+  cv::Mat l_plus_m = dkl.row(0);
+
+  // red vs. green, difference of long and medium cones
+  cv::Mat l_minus_m = dkl.row(1);
+
+  // blue vs. yellow, short (~blue) cone response minus L+M
+  cv::Mat l_plus_m_minus_s = dkl.row(2);
+
+  // convert back to matrix
+  l_plus_m         = l_plus_m.reshape(1, I32FC3U.rows);
+  l_minus_m        = l_minus_m.reshape(1, I32FC3U.rows);
+  l_plus_m_minus_s = l_plus_m_minus_s.reshape(1, I32FC3U.rows);
+
+  // rescale chromatic competition channels
+  l_minus_m += 1.f;
+  l_minus_m /= 2.f;
+  l_plus_m_minus_s += 1.f;
+  l_plus_m_minus_s /= 2.f;
+
+  return std::make_tuple(l_plus_m, l_minus_m, l_plus_m_minus_s);
 }
 
 template<typename T>
@@ -626,7 +672,7 @@ kernels_lap_of_gauss(int max_size, int n = -1)
   MatVec kernels;
   if (max_size <= 0 || n == 0) return kernels;
 
-  // minimum kernel size is 7x7
+  // minimum kernel kern_size is 7x7
   int min_size  = 7;
   max_size      = std::max(max_size, min_size);
   n             = n == -1 ? max_size : n;
@@ -655,7 +701,7 @@ kernels_lap_of_gauss(int max_size, int n = -1)
 cv::Mat
 kernel_morph(uint half_size, const cv::MorphShapes &shape = cv::MORPH_ELLIPSE)
 {
-  auto k = 2 * half_size + 1;
+  auto k = std::max(3, static_cast<int>(2 * half_size + 1));
   return cv::getStructuringElement(shape, cv::Size(k, k), cv::Point(half_size, half_size));
 }
 
@@ -674,6 +720,21 @@ get_border_mask(int width, int height, double p = 1, float scale = 5)
   unit_norm(mask);
 
   return mask;
+}
+
+void
+update_LoG_kernel_data(MatVec &kernels_LoG,
+                       double &max_LoG_prop,
+                       int &n_LoG_kern,
+                       const double &length,
+                       const double &min_k = 7,
+                       const double &max_p = 2)
+{
+  double max_prop       = std::min(std::max((min_k / length), max_LoG_prop), max_p);
+  uint max_LoG_win_size = odd_int(static_cast<int>(max_prop * length));
+  kernels_LoG           = kernels_lap_of_gauss(max_LoG_win_size, n_LoG_kern);
+  n_LoG_kern            = static_cast<int>(kernels_LoG.size());
+  max_LoG_prop          = n_LoG_kern == 0 ? 0. : (kernels_LoG[0].rows / length);
 }
 
 double
@@ -795,7 +856,7 @@ print_image_value_info(const cv::Mat &image)
   cv::meanStdDev(image, mu, sigma);
   auto range = global_range(image);
   auto med   = global_median(image);
-  std::cout << "size=" << image.size() << ", range=" << range << ",  median=" << med << ",  mean=" << mu
+  std::cout << "kern_size=" << image.size() << ", range=" << range << ",  median=" << med << ",  mean=" << mu
             << ", sd=" << sigma << std::endl;
 }
 
@@ -871,7 +932,7 @@ setup_image_layout(const MatVec &mat_vec,
   for (int r = 0; r < m_rows; ++r) {
     for (int c = 0; c < n_cols; ++c) {
       if (img_index < n_images) {
-        // place x,y size of current image in matrix
+        // place x,y kern_size of current image in matrix
         tmp_heights.at<double>(r, c) = mat_vec[img_index].rows * display.scale;
         tmp_widths.at<double>(r, c)  = mat_vec[img_index].cols * display.scale;
       } else {
@@ -882,7 +943,7 @@ setup_image_layout(const MatVec &mat_vec,
     }
   }
 
-  // find mat size of each image to size width and height of display
+  // find mat kern_size of each image to kern_size width and height of display
   double img_height = 0;
   double img_width;
 

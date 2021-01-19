@@ -347,7 +347,7 @@ namespace debug {
       cv::setTrackbarPos("LoG n", pars->debug_window_name, 0);
     } else {
       if (pars->n_LoG_kern == 0) pars->n_LoG_kern = -1;
-      update_LoG_kernel_data(pars->kernels_LoG, pars->max_LoG_prop, pars->n_LoG_kern, pars->image_len);
+      imtools::update_LoG_kernel_data(pars->kernels_LoG, pars->max_LoG_prop, pars->n_LoG_kern, pars->image_len);
     }
     pos          = static_cast<int>(pars->max_LoG_prop * 100.);
     pars->toggle = pars->n_LoG_kern > 0;
@@ -364,7 +364,7 @@ namespace debug {
       pars->kernels_LoG.clear();
       cv::setTrackbarPos("LoG prop", pars->debug_window_name, 0);
     } else {
-      update_LoG_kernel_data(pars->kernels_LoG, pars->max_LoG_prop, pars->n_LoG_kern, pars->image_len);
+      imtools::update_LoG_kernel_data(pars->kernels_LoG, pars->max_LoG_prop, pars->n_LoG_kern, pars->image_len);
     }
     pos          = pars->n_LoG_kern;
     pars->toggle = pars->n_LoG_kern > 0;
@@ -378,7 +378,7 @@ namespace debug {
     pars->gauss_kern     = imtools::kernel_gauss_2d(odd_int(pos));
     pars->gauss_blur_win = pars->gauss_kern.cols;
 
-    cv::setTrackbarPos("Blur size", pars->debug_window_name, pars->gauss_blur_win);
+    cv::setTrackbarPos("Blur kern_size", pars->debug_window_name, pars->gauss_blur_win);
   }
 
   void
@@ -447,8 +447,8 @@ namespace debug {
     cv::createTrackbar("LoG n", pars->debug_window_name, &notches->n_LoG_kern, 10, &callback_log_n_kern, pars);
 
     cv::createTrackbar(
-      "Blur size", pars->debug_window_name, &notches->gauss_blur_win, 50, &callback_gauss_blur_win, pars);
-    cv::setTrackbarMin("Blur size", pars->debug_window_name, 3);
+      "Blur kern_size", pars->debug_window_name, &notches->gauss_blur_win, 50, &callback_gauss_blur_win, pars);
+    cv::setTrackbarMin("Blur kern_size", pars->debug_window_name, 3);
 
     cv::createTrackbar(
       "Contrast fac", pars->debug_window_name, &notches->contrast_factor, 10, &callback_contrast_factor, pars);
