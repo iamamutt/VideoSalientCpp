@@ -3,7 +3,7 @@
 
 #include "capture.h"
 #include "parameters.h"
-#include "saliency.h"
+#include "saliency_map.h"
 
 struct AllTrackbarPositions
 {
@@ -211,8 +211,6 @@ setup_windows(Source &src, Parameters &pars)
     maps_rect.width  = 0;
     maps_rect.height = 0;
   }
-
-  //  cv::setWindowProperty(src.layouts.main.winname, cv::WND_PROP_TOPMOST, 1);
 }
 
 auto
@@ -229,7 +227,7 @@ initialize(int argc, const char *const *argv)
   src.cap  = capture_device;
   src.img  = cap::initialize_source_images(first_image);
   src.fps  = cap::initialize_fps_counter(5, 1, 30);
-  src.dim  = imtools::get_image_dims(first_image, 240, true);
+  src.dim  = imtools::get_image_dims(first_image, imtools::min_dim(first_image.size()) * opts.disp_resize, true);
   src.opts = opts;
 
   // --debug option is on or --dir not specified in command line options
@@ -238,7 +236,8 @@ initialize(int argc, const char *const *argv)
   setup_video_writer(src);
   init_frame_start_stop_status(src);
 
-  Parameters pars = params::initialize_parameters(src.opts.pars_file, src.dim.size, src.status.static_image);
+  Parameters pars = params::initialize_parameters(src.opts.pars_file, src.dim.size);
+  params::update_pars_weights(pars, src.status.static_image);
 
   return std::make_tuple(src, pars);
 }

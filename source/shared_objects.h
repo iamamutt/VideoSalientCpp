@@ -1,5 +1,5 @@
-#ifndef SALIENCY_DATA_STRUCTURES_H
-#define SALIENCY_DATA_STRUCTURES_H
+#ifndef SALIENCY_SHARED_OBJECTS_H
+#define SALIENCY_SHARED_OBJECTS_H
 
 #include "command_line.h"
 #include "timing.h"
@@ -10,6 +10,8 @@ using Strings       = std::vector<std::string>;
 using MatVec        = std::vector<cv::Mat>;
 using VecFutureMats = std::vector<std::shared_future<cv::Mat>>;
 using FutureMatVec  = std::shared_future<MatVec>;
+
+inline const double BASE_IMAGE_LENGTH = 500;
 
 struct Images
 {
@@ -124,4 +126,23 @@ struct SaliencyMap
   cv::Scalar cyan{255, 255, 0};                    // color of other salient regions above threshold
 };
 
-#endif  // SALIENCY_DATA_STRUCTURES_H
+template<typename T>
+T
+yml_node_value(const cv::FileNode &node, T default_value)
+{
+  return node.empty() ? default_value : static_cast<T>(node);
+}
+
+template<typename T>
+T
+yml_node_value(const cv::FileNode &node, T default_value, T invalid_value)
+{
+  if (node.empty()) {
+    return default_value;
+  } else {
+    auto node_value = static_cast<T>(node);
+    return node_value == invalid_value ? default_value : node_value;
+  }
+}
+
+#endif  // SALIENCY_SHARED_OBJECTS_H

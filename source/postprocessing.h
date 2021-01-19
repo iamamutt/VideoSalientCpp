@@ -1,7 +1,7 @@
 #ifndef SALIENCY_POSTPROCESSING_H
 #define SALIENCY_POSTPROCESSING_H
 
-#include "saliency.h"
+#include "saliency_map.h"
 
 namespace postprocess {
 

@@ -29,6 +29,7 @@ struct CmdLineOpts
   int start_frame      = 0;
   int stop_frame       = -1;
   int escape_key_code  = 27;
+  double disp_resize   = 0.5;
   std::string pars_file;
   std::string out_dir;
   std::string out_file;
@@ -55,6 +56,7 @@ make_cmd_line_parser(int argc, const char *const *argv)
     "{debug       | | toggle visualization of feature parameters. --dir output will be disabled                     }"
     "{no_gui      | | turn off displaying any output windows and using OpenCV GUI functionality. Will ignore --debug}"
     "{win_align   | | align debug windows, alignment depends on image and screen size                               }"
+    "{disp_resize | | proportion of original image size used to shrink the display output                           }"
     "{alt_exit    | | sets program to allow right-clicking on the \"Saliency\" window to exit                       }"
     "{start_frame | | start detection at this value instead of starting at the first frame, default=1               }"
     "{stop_frame  | | stop detection at this value instead of ending at the last frame, default=-1 (end)            }";
@@ -92,6 +94,7 @@ parse_command_line_args(int argc, const char *const *argv)
   if (parser.has("debug")) opts.debug = parser.get<bool>("debug");
   if (parser.has("no_gui")) opts.no_gui = parser.get<bool>("no_gui");
   if (parser.has("win_align")) opts.win_align = parser.get<bool>("win_align");
+  if (parser.has("disp_resize")) opts.disp_resize = parser.get<double>("disp_resize");
   if (parser.has("alt_exit")) opts.right_click_esc = parser.get<bool>("alt_exit");
   if (parser.has("start_frame")) opts.start_frame = parser.get<int>("start_frame");
   if (parser.has("stop_frame")) opts.stop_frame = parser.get<int>("stop_frame");

@@ -1,7 +1,7 @@
-#ifndef SALIENCY_SALIENCY_H
-#define SALIENCY_SALIENCY_H
+#ifndef SALIENCY_SALIENCY_MAP_H
+#define SALIENCY_SALIENCY_MAP_H
 
-#include "image_tools.h"
+#include "cv_tools.h"
 #include "parameters.h"
 
 namespace saliency {
@@ -378,7 +378,7 @@ namespace debug {
     pars->gauss_kern     = imtools::kernel_gauss_2d(odd_int(pos));
     pars->gauss_blur_win = pars->gauss_kern.cols;
 
-    cv::setTrackbarPos("Blur kern_size", pars->debug_window_name, pars->gauss_blur_win);
+    cv::setTrackbarPos("Blur size", pars->debug_window_name, pars->gauss_blur_win);
   }
 
   void
@@ -426,7 +426,7 @@ namespace debug {
     int saliency_thresh;
     int saliency_thresh_mult;
 
-    explicit TrackbarPositions(const ModelParameters &defaults = ModelParameters(.25, 3, 3))
+    explicit TrackbarPositions(const ModelParameters &defaults = ModelParameters())
     {
       max_LoG_size         = static_cast<int>(defaults.max_LoG_prop * 100.);
       n_LoG_kern           = static_cast<int>(defaults.n_LoG_kern);
@@ -442,13 +442,13 @@ namespace debug {
   create_trackbar(TrackbarPositions *notches, ModelParameters *pars)
   {
     if (!pars->toggle) return;
-    cv::namedWindow(pars->debug_window_name, cv::WINDOW_NORMAL);
-    cv::createTrackbar("LoG prop", pars->debug_window_name, &notches->max_LoG_size, 200, &callback_log_max_win, pars);
+    cv::namedWindow(pars->debug_window_name, cv::WINDOW_AUTOSIZE);
+    cv::createTrackbar("LoG prop", pars->debug_window_name, &notches->max_LoG_size, 125, &callback_log_max_win, pars);
     cv::createTrackbar("LoG n", pars->debug_window_name, &notches->n_LoG_kern, 10, &callback_log_n_kern, pars);
 
     cv::createTrackbar(
-      "Blur kern_size", pars->debug_window_name, &notches->gauss_blur_win, 50, &callback_gauss_blur_win, pars);
-    cv::setTrackbarMin("Blur kern_size", pars->debug_window_name, 3);
+      "Blur size", pars->debug_window_name, &notches->gauss_blur_win, 50, &callback_gauss_blur_win, pars);
+    cv::setTrackbarMin("Blur size", pars->debug_window_name, 3);
 
     cv::createTrackbar(
       "Contrast fac", pars->debug_window_name, &notches->contrast_factor, 10, &callback_contrast_factor, pars);
@@ -528,4 +528,4 @@ namespace debug {
 }  // namespace debug
 }  // namespace saliency
 
-#endif  // SALIENCY_SALIENCY_H
+#endif  // SALIENCY_SALIENCY_MAP_H

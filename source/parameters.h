@@ -6,6 +6,32 @@
 #include "channel_opticalflow.h"
 #include "channel_orientation.h"
 
+struct DefaultChanParams
+{
+  color::DefaultPars color;
+  lines::DefaultPars lines;
+  flick::DefaultPars flicker;
+  flow::DefaultPars flow;
+
+  DefaultChanParams() = default;
+
+  explicit DefaultChanParams(const cv::Size &dims)
+    : color(imtools::min_dim(dims)),
+      lines(imtools::min_dim(dims)),
+      flicker(imtools::min_dim(dims)),
+      flow(imtools::min_dim(dims))
+  {}
+
+  explicit DefaultChanParams(const cv::FileNode &node, const cv::Size &dims)
+    : color(node["color"], imtools::min_dim(dims)),
+      lines(node["lines"], imtools::min_dim(dims)),
+      flicker(node["flicker"], imtools::min_dim(dims)),
+      flow(node["flow"], imtools::min_dim(dims))
+  {
+    if (node.empty()) std::cout << "\"feature_channels\" node not specified in parameters file" << std::endl;
+  }
+};
+
 // collection of parameters for each feature channel
 struct ChannelParameters
 {
@@ -15,39 +41,66 @@ struct ChannelParameters
   flow::Parameters flow;
 
   ChannelParameters() = default;
-  explicit ChannelParameters(const cv::Size &dims) : color(), flicker()
+
+  // determine parameters and kernel sizes based on smallest image dimension
+  explicit ChannelParameters(const DefaultChanParams &defaults)
+    : color(defaults.color), flicker(defaults.flicker), flow(defaults.flow), lines(defaults.lines)
+  {}
+};
+
+struct DefaultModelParams
+{
+  double max_LoG_prop         = 0.3334;
+  int n_LoG_kern              = 3;
+  double contrast_factor      = 2;
+  double saliency_thresh      = -1;
+  double saliency_thresh_mult = 2;
+  double central_focus_prop   = .63;
+  int gauss_blur_win          = 7;
+  int morph_half_win          = 1;
+
+  cv::Size_<int> dims = cv::Size(BASE_IMAGE_LENGTH, BASE_IMAGE_LENGTH);
+
+  DefaultModelParams() = default;
+
+  explicit DefaultModelParams(const cv::Size &_dims)
   {
-    // determine kernel sizes based on image dimensions
-    if (!dims.empty()) {
-      auto sz = std::min(dims.height, dims.width);
+    if (_dims.empty()) return;
 
-      auto lines_win = odd_int(static_cast<uint>(sz * .025));
-      auto flow_win  = odd_int(static_cast<uint>(sz * .125));
+    // adjust defaults based on user image size
+    dims      = _dims;
+    auto size = imtools::min_dim(dims);
+    auto adj  = size / BASE_IMAGE_LENGTH;
 
-      lines = lines::Parameters(lines_win);
-      flow  = flow::Parameters(flow_win);
+    gauss_blur_win = static_cast<int>(round(gauss_blur_win * adj));
+    morph_half_win = static_cast<int>(round(morph_half_win * adj));
+  }
+
+  explicit DefaultModelParams(const cv::FileNode &node, const cv::Size &dims) : DefaultModelParams(dims)
+  {
+    if (node.empty()) {
+      std::cout << "\"model\" node not specified in parameters file" << std::endl;
+      return;
     }
+
+    max_LoG_prop         = yml_node_value<double>(node["max_LoG_prop"], max_LoG_prop);
+    n_LoG_kern           = yml_node_value<int>(node["n_LoG_kern"], n_LoG_kern);
+    gauss_blur_win       = yml_node_value<int>(node["gauss_blur_win"], gauss_blur_win, -1);
+    contrast_factor      = yml_node_value<int>(node["contrast_factor"], contrast_factor);
+    central_focus_prop   = yml_node_value<double>(node["central_focus_prop"], central_focus_prop);
+    saliency_thresh      = yml_node_value<double>(node["saliency_thresh"], saliency_thresh);
+    saliency_thresh_mult = yml_node_value<double>(node["saliency_thresh_mult"], saliency_thresh_mult);
   }
 };
 
-void
-update_LoG_kernel_data(MatVec &kernels_LoG,
-                       double &max_LoG_prop,
-                       int &n_LoG_kern,
-                       const double &length,
-                       double min_k = 7,
-                       double max_p = 2)
-{
-  double max_prop       = std::min(std::max((min_k / length), max_LoG_prop), max_p);
-  uint max_LoG_win_size = odd_int(static_cast<int>(max_prop * length));
-  kernels_LoG           = imtools::kernels_lap_of_gauss(max_LoG_win_size, n_LoG_kern);
-  n_LoG_kern            = static_cast<int>(kernels_LoG.size());
-  max_LoG_prop          = n_LoG_kern == 0 ? 0. : (kernels_LoG[0].rows / length);
-}
-
-// collection of general saliency parameters
+// collection of general saliency model parameters
 struct ModelParameters
 {
+  // no constructor input
+  std::string debug_window_name = "FeatureMaps";
+  bool toggle                   = true;
+  double image_len              = 0;
+
   double max_LoG_prop;
   int n_LoG_kern;
   int gauss_blur_win;
@@ -55,11 +108,6 @@ struct ModelParameters
   double central_focus_prop;
   double saliency_thresh;
   double saliency_thresh_mult;
-
-  // no constructor input
-  double image_len              = 0;
-  std::string debug_window_name = "FeatureMaps";
-  bool toggle                   = true;
 
   // size dependent objects
   MatVec kernels_LoG;
@@ -69,43 +117,30 @@ struct ModelParameters
   cv::Mat blank_image;
 
   // initialize parameters with defaults, some objects are left empty
-  explicit ModelParameters(double _max_LoG_prop         = 0.5,
-                           int _n_LoG_kern              = 3,
-                           int _gauss_blur_win          = 5,
-                           double _contrast_factor      = 2,
-                           double _central_focus_prop   = .63,
-                           double _saliency_thresh      = -1,
-                           double _saliency_thresh_mult = 1.5)
-    : max_LoG_prop(_max_LoG_prop),
-      n_LoG_kern(_n_LoG_kern),
-      gauss_blur_win(_gauss_blur_win),
-      contrast_factor(_contrast_factor),
-      central_focus_prop(_central_focus_prop),
-      saliency_thresh(_saliency_thresh),
-      saliency_thresh_mult(_saliency_thresh_mult){};
-
-  // construct size-dependent objects and update default values
-  explicit ModelParameters(const cv::Size &dims, ModelParameters pars = ModelParameters())
-    : ModelParameters(std::move(pars))
+  explicit ModelParameters(const DefaultModelParams &defaults = DefaultModelParams())
+    : max_LoG_prop(defaults.max_LoG_prop),
+      n_LoG_kern(defaults.n_LoG_kern),
+      gauss_blur_win(defaults.gauss_blur_win),
+      contrast_factor(defaults.contrast_factor),
+      central_focus_prop(defaults.central_focus_prop),
+      saliency_thresh(defaults.saliency_thresh),
+      saliency_thresh_mult(defaults.saliency_thresh_mult)
   {
-    if (dims.empty()) {
-      std::cerr << "\n!!Image size is unspecified for ModelParameters constructor" << std::endl;
+    image_len = static_cast<double>(imtools::min_dim(defaults.dims));
+    if (image_len < 5) {
+      std::cerr << "\n!!Image size: " << defaults.dims << " is too small" << std::endl;
       exit(1);
     };
 
-    blank_image = imtools::make_black(dims);
-    image_len   = static_cast<double>(std::min(dims.height, dims.width));
+    dilation_kernel = imtools::kernel_morph(defaults.morph_half_win);
+    blank_image     = imtools::make_black(defaults.dims);
+    central_mask    = imtools::get_border_mask(defaults.dims.width, defaults.dims.height, central_focus_prop);
+    gauss_kern      = imtools::kernel_gauss_2d(odd_int(gauss_blur_win));
 
-    update_LoG_kernel_data(kernels_LoG, max_LoG_prop, n_LoG_kern, image_len);
-    toggle = n_LoG_kern > 0;
+    imtools::update_LoG_kernel_data(kernels_LoG, max_LoG_prop, n_LoG_kern, image_len);
 
-    double _gauss_blur_win = gauss_blur_win <= 0 ? image_len * .01 : gauss_blur_win;
-    gauss_kern             = imtools::kernel_gauss_2d(odd_int(_gauss_blur_win));
-    gauss_blur_win         = gauss_kern.cols;
-
-    central_mask = imtools::get_border_mask(dims.width, dims.height, central_focus_prop);
-
-    dilation_kernel = cv::Mat::ones(3, 3, CV_8U);
+    toggle         = n_LoG_kern > 0;
+    gauss_blur_win = gauss_kern.rows;
   }
 };
 
@@ -116,111 +151,14 @@ struct Parameters
   ChannelParameters chan;
   float toggle_adj = 1;
 
-  Parameters() = default;
-  explicit Parameters(const cv::Size &dims) : model(dims), chan(dims) {}
-  explicit Parameters(ModelParameters _model, ChannelParameters _chan)
-    : model(std::move(_model)), chan(std::move(_chan))
+  Parameters() : model(DefaultModelParams()), chan(DefaultChanParams()){};
+  explicit Parameters(const cv::Size &dims) : model(DefaultModelParams(dims)), chan(DefaultChanParams(dims)) {}
+  explicit Parameters(cv::FileStorage &fs, const cv::Size &dims)
+    : model(DefaultModelParams(fs["model"], dims)), chan(DefaultChanParams(fs["feature_channels"], dims))
   {}
 };
 
 namespace params {
-
-template<typename T>
-T
-get_node_default(const cv::FileNode &node, T default_value)
-{
-  return node.empty() ? default_value : static_cast<T>(node);
-}
-
-template<typename T>
-T
-get_node_default(const cv::FileNode &node, T default_value, T invalid_value)
-{
-  if (node.empty()) {
-    return default_value;
-  } else {
-    auto node_value = static_cast<T>(node);
-    return node_value == invalid_value ? default_value : node_value;
-  }
-}
-
-ModelParameters
-read_model_parameters(cv::FileStorage &fs, const cv::Size &dims)
-{
-  ModelParameters pars(dims);
-
-  auto pars_node = fs["model"];
-  if (pars_node.empty()) {
-    std::cout << "no \"model\" node specified in parameters file" << std::endl;
-    return pars;
-  }
-
-  ModelParameters user_pars(get_node_default<double>(pars_node["max_LoG_prop"], pars.max_LoG_prop),
-                            get_node_default<int>(pars_node["n_LoG_kern"], -1),
-                            get_node_default<int>(pars_node["gauss_blur_win"], -1),
-                            get_node_default<int>(pars_node["contrast_factor"], pars.contrast_factor),
-                            get_node_default<double>(pars_node["central_focus_prop"], pars.central_focus_prop),
-                            get_node_default<double>(pars_node["saliency_thresh"], pars.saliency_thresh),
-                            get_node_default<double>(pars_node["saliency_thresh_mult"], pars.saliency_thresh_mult));
-
-  return ModelParameters(dims, user_pars);
-}
-
-ChannelParameters
-read_channel_parameters(cv::FileStorage &fs, const cv::Size &dims)
-{
-  ChannelParameters pars(dims);
-
-  auto pars_node = fs["feature_channels"];
-  if (pars_node.empty()) {
-    std::cout << "no \"feature_channels\" node specified in parameters file" << std::endl;
-    return pars;
-  }
-
-  // read color channel parameters
-  auto color_node = pars_node["color"];
-  if (!color_node.empty()) {
-    pars.color = color::Parameters(get_node_default<std::string>(color_node["colorspace"], "LAB"),
-                                   get_node_default(color_node["rescale"], pars.color.scale),
-                                   get_node_default(color_node["filter"], pars.color.shift),
-                                   get_node_default(color_node["weight"], pars.color.weight));
-  }
-
-  // read lines channel parameters
-  auto lines_node = pars_node["lines"];
-  if (!lines_node.empty()) {
-    pars.lines = lines::Parameters(
-      get_node_default(lines_node["gabor_win_size"], pars.lines.gabor_pars.size.height, -1),
-      get_node_default(lines_node["n_rotations"], (int)pars.lines.kernels.size()),
-      get_node_default(lines_node["sigma"], pars.lines.gabor_pars.sigma),
-      get_node_default(lines_node["lambda"], pars.lines.gabor_pars.lambda),
-      get_node_default(lines_node["psi"], pars.lines.gabor_pars.psi),
-      get_node_default(lines_node["gamma"], pars.lines.gabor_pars.gamma),
-      get_node_default(lines_node["weight"], pars.lines.weight));
-  }
-
-  // read flick channel parameters
-  auto flicker_node = pars_node["flicker"];
-  if (!flicker_node.empty()) {
-    pars.flicker = flick::Parameters(get_node_default(flicker_node["lower_limit"], pars.flicker.lower_lim),
-                                     get_node_default(flicker_node["upper_limit"], pars.flicker.upper_lim),
-                                     get_node_default(flicker_node["weight"], pars.flicker.weight));
-  }
-
-  // read flow channel parameters
-  auto flow_node = pars_node["flow"];
-  if (!flow_node.empty()) {
-    auto flow_dilate_sz = (pars.flow.dilate_shape.rows - 1) / 2;
-    pars.flow = flow::Parameters(get_node_default(flow_node["flow_window_size"], pars.flow.lk_win_size.height, -1),
-                                 get_node_default(flow_node["max_num_points"], pars.flow.max_n_pts),
-                                 get_node_default(flow_node["min_point_dist"], pars.flow.min_pt_dist),
-                                 get_node_default(flow_node["morph_half_win"], flow_dilate_sz),
-                                 get_node_default(flow_node["morph_iters"], pars.flow.dilate_iter),
-                                 get_node_default(flow_node["weight"], pars.flow.weight));
-  }
-
-  return pars;
-}
 
 void
 write_model_parameters(cv::FileStorage &fs, const ModelParameters &pars)
@@ -244,7 +182,7 @@ write_model_parameters(cv::FileStorage &fs, const ModelParameters &pars)
 
   fs.writeComment(
     "Window size for amount of blur applied to saliency map. "
-    "Set to -1 to use ~min(rows, cols) * .01.");
+    "Set to -1 to calculate window size from image size.");
   fs << "gauss_blur_win" << pars.gauss_blur_win;
 
   fs.writeComment("Increase global contrast between high/low saliency.");
@@ -257,12 +195,13 @@ write_model_parameters(cv::FileStorage &fs, const ModelParameters &pars)
 
   fs.writeComment(
     "Threshold value to generate salient contours. "
-    "Should be between 0 and 255.");
+    "Should be between 0 and 255. "
+    "Set to -1 to use Otsu automatic thresholding.");
   fs << "saliency_thresh" << pars.saliency_thresh;
 
   fs.writeComment(
     "Threshold multiplier. "
-    "Only for automized Otsu saliency threshold (i.e., saliency_thresh=-1).");
+    "Only applied to automatic threshold (i.e., saliency_thresh=-1).");
   fs << "saliency_thresh_mult" << pars.saliency_thresh_mult;
 
   fs << "}";  // end model parameters
@@ -285,24 +224,24 @@ write_channel_parameters(cv::FileStorage &fs, const ChannelParameters &pars)
   fs.writeComment(
     "Color space to use as starting point for extracting luminance and color. "
     "Should be either \"DKL\", \"LAB\", or \"RGB\".");
-  std::string cspace;
+  std::string colorspace;
   switch (pars.color.cspace) {
-    case color::ColorSpace::LAB: cspace = "LAB"; break;
-    case color::ColorSpace::RGB: cspace = "RGB"; break;
-    case color::ColorSpace::DKL: cspace = "DKL"; break;
-    default: cspace = "DKL";
+    case color::ColorSpace::LAB: colorspace = "LAB"; break;
+    case color::ColorSpace::RGB: colorspace = "RGB"; break;
+    case color::ColorSpace::DKL: colorspace = "DKL"; break;
+    default: colorspace = "DKL";
   }
-  fs << "colorspace" << cspace;
+  fs << "colorspace" << colorspace;
 
   fs.writeComment(
     "Scale parameter (k) for logistic function. "
     "Sharpens boundary between high/low intensity as value increases.");
-  fs << "rescale" << pars.color.scale;
+  fs << "scale" << pars.color.scale;
 
   fs.writeComment(
     "Shift parameter (mu) for logistic function. "
     "This threshold cuts lower level intensity as this value increases.");
-  fs << "filter" << pars.color.shift;
+  fs << "shift" << pars.color.shift;
 
   fs.writeComment(
     "Weight applied to all pixels in each map/image. "
@@ -318,34 +257,34 @@ write_channel_parameters(cv::FileStorage &fs, const ChannelParameters &pars)
 
   fs.writeComment(
     "Kernel size for square gabor patches. "
-    "Set to -1 to use ~min(rows, cols) * .025");
-  auto gabor_win_size = pars.lines.gabor_pars.size.empty() ? -1 : pars.lines.gabor_pars.size.height;
-  fs << "gabor_win_size" << gabor_win_size;
+    "Set to -1 to calculate window size from image size.");
+  auto kern_size = pars.lines.kern_size;
+  fs << "kern_size" << kern_size;
 
   fs.writeComment(
     "Number of rotations used to create differently angled Gabor patches. "
     "N rotations are split evenly between 0 and 2pi.");
-  fs << "n_rotations" << (int)pars.lines.kernels.size();
+  fs << "n_rotations" << pars.lines.n_rotations;
 
   fs.writeComment(
     "Sigma parameter for Gabor filter. "
     "Adjusts frequency.");
-  fs << "sigma" << pars.lines.gabor_pars.sigma;
+  fs << "sigma" << pars.lines.sigma;
 
   fs.writeComment(
     "Lambda parameter for Gabor filter. "
     "Adjusts width.");
-  fs << "lambda" << pars.lines.gabor_pars.lambda;
+  fs << "lambda" << pars.lines.lambda;
 
   fs.writeComment(
     "Psi parameter for Gabor filter. "
     "Adjusts angle.");
-  fs << "psi" << pars.lines.gabor_pars.psi;
+  fs << "psi" << pars.lines.psi;
 
   fs.writeComment(
     "Gamma parameter for Gabor filter. "
     "Adjusts ratio.");
-  fs << "gamma" << pars.lines.gabor_pars.gamma;
+  fs << "gamma" << pars.lines.gamma;
 
   fs.writeComment(
     "Weight applied to all pixels in each map/image. "
@@ -383,7 +322,7 @@ write_channel_parameters(cv::FileStorage &fs, const ChannelParameters &pars)
 
   fs.writeComment(
     "Size of square window for sparse flow estimation. "
-    "Set to -1 to use ~min(rows, cols) * .125. "
+    "Set to -1 to calculate window size from image size. "
     "Setting this to a smaller value generates higher flow intensity but at the cost of accuracy.");
   auto flow_window_size = pars.flow.lk_win_size.empty() ? -1 : pars.flow.lk_win_size.height;
   fs << "flow_window_size" << flow_window_size;
@@ -428,8 +367,8 @@ open_yaml_reader(const std::string &yaml_file)
 void
 update_pars_weights(Parameters &pars, bool static_image)
 {
-  float n_final_maps = 5;  // number of slots in FeatureMaps
-  float n_present    = n_final_maps;
+  float n_final_maps = 5;             // number of channels in FeatureMaps
+  float n_present    = n_final_maps;  // number of channels toggled on
 
   if (static_image) {
     // turn off these channels for static images
@@ -453,26 +392,23 @@ update_pars_weights(Parameters &pars, bool static_image)
     pars.chan.flow.toggled = false;
     n_present--;
   }
+
   pars.toggle_adj = n_final_maps / n_present;
 }
 
 Parameters
-initialize_parameters(const std::string &yaml_file, const cv::Size &dims, bool is_static)
+initialize_parameters(const std::string &yaml_file, const cv::Size &dims)
 {
-  Parameters pars;
-
   if (yaml_file.empty()) {
-    // return default parameters based on image size
-    pars = Parameters(dims);
+    // use default parameters adjusted for size of input image
+    return Parameters(dims);
   } else {
     // return user specified parameters
-    auto fs = open_yaml_reader(yaml_file);
-    pars    = Parameters(read_model_parameters(fs, dims), read_channel_parameters(fs, dims));
-    fs.release();
+    auto file_store = open_yaml_reader(yaml_file);
+    Parameters pars(file_store, dims);
+    file_store.release();
+    return pars;
   }
-
-  update_pars_weights(pars, is_static);
-  return pars;
 }
 
 void
@@ -489,8 +425,10 @@ parameter_defaults(const std::string &yaml_file)
 {
   Parameters pars;
   // set to empty so that sizes can be determined by image
-  pars.chan.flow.lk_win_size      = cv::Size();
-  pars.chan.lines.gabor_pars.size = cv::Size();
+  pars.chan.flow.lk_win_size = cv::Size();
+  pars.chan.lines.kern_size  = -1;
+  pars.model.gauss_blur_win  = -1;
+  pars.model.saliency_thresh = -1;
   write_parameters(yaml_file, pars);
 }
 }  // namespace params

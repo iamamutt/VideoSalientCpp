@@ -1,7 +1,7 @@
 #ifndef SALIENCY_CHANNEL_OPTICALFLOW_H
 #define SALIENCY_CHANNEL_OPTICALFLOW_H
 
-#include "image_tools.h"
+#include "cv_tools.h"
 
 namespace flow {
 
@@ -16,48 +16,83 @@ struct Point
   cv::Point2f p1;    // frame n point data
 };
 
+struct DefaultPars
+{
+  int flow_window_size  = 51;
+  int max_num_points    = 200;
+  double min_point_dist = 15;
+  int morph_half_win    = 6;
+  int morph_iters       = 8;
+  float weight          = 1;
+
+  DefaultPars() = default;
+
+  explicit DefaultPars(int size)
+  {
+    if (size < 1 || size == BASE_IMAGE_LENGTH) return;
+
+    // adjust defaults based on user image size
+    auto adj = size / BASE_IMAGE_LENGTH;
+
+    flow_window_size = static_cast<int>(round(flow_window_size * adj));
+    max_num_points   = static_cast<int>(round(max_num_points * adj));
+    morph_half_win   = std::max(1, static_cast<int>(round(morph_half_win * adj)));
+
+    min_point_dist = min_point_dist * adj;
+  }
+
+  explicit DefaultPars(const cv::FileNode &node, int size = 0) : DefaultPars(size)
+  {
+    if (node.empty()) return;
+
+    flow_window_size = yml_node_value(node["flow_window_size"], flow_window_size, -1);
+    max_num_points   = yml_node_value(node["max_num_points"], max_num_points);
+    min_point_dist   = yml_node_value(node["min_point_dist"], min_point_dist);
+    morph_half_win   = yml_node_value(node["morph_half_win"], morph_half_win);
+    morph_iters      = yml_node_value(node["morph_iters"], morph_iters);
+    weight           = yml_node_value(node["weight"], weight);
+  }
+};
+
 // main data object for optical flow
 struct Parameters
 {
-  bool toggled = true;
-  float weight;                     // weight applied to all pixels in each output image
-  int max_n_pts;                    // maximum number of allotted points
-  double min_pt_dist;               // minimum distance between new points/features
-  double max_dist;                  // max distance based on diagonal length of flow window
-  int dilate_iter;                  // number of iterations for dilation
-  int erode_iter;                   // number of erode iterations
-  cv::Size lk_win_size;             // windows size for sparse flow
-  cv::Mat dilate_shape;             // dilation shape of points
-  cv::Point dilate_ctr;             // dilation shape center
-  cv::TermCriteria term_crit;       // termination criteria
+  std::string debug_window_name = "FlowChannel";
+  bool toggled                  = true;
+  float weight;
+
+  int max_n_pts;               // maximum number of allotted points
+  double min_pt_dist;          // minimum distance between new points/features
+  double max_dist;             // max distance based on diagonal length of flow window
+  int dilate_iter;             // number of iterations for dilation
+  int erode_iter;              // number of erode iterations
+  cv::Size lk_win_size;        // window size for sparse flow
+  cv::Mat dilate_shape;        // dilation shape of points
+  cv::Point dilate_ctr;        // dilation shape center
+  cv::TermCriteria term_crit;  // termination criteria
+
   std::vector<uchar> pt_status;     // binary status indicator for points
   std::vector<float> pt_error;      // eigen errors for points
   std::vector<int> pt_static;       // incrementer for non-moving points
   std::vector<cv::Point2f> p0_pts;  // point coordinates for previous frame
   std::vector<cv::Point2f> p1_pts;  // point coordinates for current frame
   std::vector<Point> points;        // final, processed point data
-  std::string debug_window_name = "FlowChannel";
 
-  explicit Parameters(int flow_window_size    = 51,
-                      int max_num_points      = 200,
-                      double min_point_dist   = 15,
-                      unsigned morph_half_win = 6,
-                      int morph_iters         = 8,
-                      float _weight           = 1)
-    : weight(_weight),
-      max_n_pts(max_num_points),
-      min_pt_dist(min_point_dist),
-      dilate_iter(morph_iters),
+  explicit Parameters(const DefaultPars &defaults = DefaultPars())
+    : weight(defaults.weight),
+      max_n_pts(defaults.max_num_points),
+      min_pt_dist(defaults.min_point_dist),
+      dilate_iter(defaults.morph_iters),
       dilate_ctr(cv::Point(-1, -1)),
       term_crit(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 50, 0.03)
   {
-    flow_window_size = std::max(flow_window_size, 5);
-    lk_win_size      = cv::Size(flow_window_size, flow_window_size);
-    dilate_iter      = std::max(dilate_iter, 1);
-    min_pt_dist      = std::max(min_pt_dist, 3.);
-    dilate_shape     = imtools::kernel_morph(morph_half_win);
-    erode_iter       = static_cast<int>(std::max(.5 * dilate_iter, 1.));
-    max_dist         = euclidean_dist(0, 0, lk_win_size.width, lk_win_size.height, .5);
+    auto k       = odd_int(std::max(defaults.flow_window_size, 5));
+    lk_win_size  = cv::Size(k, k);
+    dilate_iter  = std::max(dilate_iter, 1);
+    min_pt_dist  = std::max(min_pt_dist, 3.);
+    dilate_shape = imtools::kernel_morph(defaults.morph_half_win);
+    erode_iter   = static_cast<int>(std::max(.5 * dilate_iter, 1.));
+    max_dist     = euclidean_dist(0, 0, lk_win_size.width, lk_win_size.height, .5);
   }
 };
 
@@ -234,19 +269,19 @@ detect(const cv::Mat &prev_8UC1, const cv::Mat &curr_8UC1, Parameters &pars)
 // *******************************************************
 namespace debug {
   void
-  callback_lk_win(int pos, void *user_data)
+  callback_lk_win_size(int pos, void *user_data)
   {
     auto *flow        = (flow::Parameters *)user_data;
     flow->lk_win_size = cv::Size(pos * 2 + 1, pos * 2 + 1);
-    cv::setTrackbarPos("Win Size", flow->debug_window_name, pos);
+    cv::setTrackbarPos("lk_win_size", flow->debug_window_name, pos);
   }
 
   void
-  callback_max_pt(int pos, void *user_data)
+  callback_max_n_pts(int pos, void *user_data)
   {
     auto *pars      = (flow::Parameters *)user_data;
     pars->max_n_pts = pos * 10;
-    cv::setTrackbarPos("Max Points", pars->debug_window_name, pos);
+    cv::setTrackbarPos("max_n_pts", pars->debug_window_name, pos);
   }
 
   static void
@@ -254,26 +289,24 @@ namespace debug {
   {
     auto *pars        = (flow::Parameters *)user_data;
     pars->min_pt_dist = 5. * pos;
-    cv::setTrackbarPos("Min Point Dist", pars->debug_window_name, pos);
-    std::cout << "- Min Point Dist updated" << std::endl;
+    cv::setTrackbarPos("min_pt_dist", pars->debug_window_name, pos);
   }
 
   void
-  callback_morph_win(int pos, void *user_data)
+  callback_dilate_size(int pos, void *user_data)
   {
     auto *pars         = (flow::Parameters *)user_data;
     pars->dilate_shape = imtools::kernel_morph(pos);
-    cv::setTrackbarPos("Morph Size", pars->debug_window_name, pos);
+    cv::setTrackbarPos("dilate_size", pars->debug_window_name, pos);
   }
 
   void
-  callback_morph_iter(int pos, void *user_data)
+  callback_dilate_iter(int pos, void *user_data)
   {
     auto *pars        = (flow::Parameters *)user_data;
     pars->dilate_iter = pos;
     pars->erode_iter  = static_cast<int>(std::max(.5 * pars->dilate_iter, 1.));
-    cv::setTrackbarPos("Morph Iter", pars->debug_window_name, pos);
-    std::cout << "- Morph Iter updated" << std::endl;
+    cv::setTrackbarPos("dilate_iter", pars->debug_window_name, pos);
   }
 
   struct TrackbarPositions
@@ -298,42 +331,41 @@ namespace debug {
   create_trackbar(flow::debug::TrackbarPositions *notches, flow::Parameters *pars)
   {
     if (!pars->toggled) return;
-    cv::namedWindow(pars->debug_window_name, cv::WINDOW_NORMAL);
+    cv::namedWindow(pars->debug_window_name, cv::WINDOW_AUTOSIZE);
 
-    cv::createTrackbar("Win Size", pars->debug_window_name, &notches->lk_win_size, 50, &callback_lk_win, pars);
-    cv::setTrackbarMin("Win Size", pars->debug_window_name, 5);
+    cv::createTrackbar("lk_win_size", pars->debug_window_name, &notches->lk_win_size, 50, &callback_lk_win_size, pars);
+    cv::setTrackbarMin("lk_win_size", pars->debug_window_name, 5);
 
-    cv::createTrackbar("Max Points", pars->debug_window_name, &notches->max_n_pts, 50, &callback_max_pt, pars);
-    cv::setTrackbarMin("Max Points", pars->debug_window_name, 1);
+    cv::createTrackbar("max_n_pts", pars->debug_window_name, &notches->max_n_pts, 50, &callback_max_n_pts, pars);
+    cv::setTrackbarMin("max_n_pts", pars->debug_window_name, 1);
+
+    cv::createTrackbar("min_pt_dist", pars->debug_window_name, &notches->min_pt_dist, 50, &callback_min_pt_dist, pars);
+    cv::setTrackbarMin("min_pt_dist", pars->debug_window_name, 1);
 
     cv::createTrackbar(
-      "Min Point Dist", pars->debug_window_name, &notches->min_pt_dist, 50, &callback_min_pt_dist, pars);
-    cv::setTrackbarMin("Min Point Dist", pars->debug_window_name, 1);
+      "dilate_size", pars->debug_window_name, &notches->dilate_shape_size, 25, &callback_dilate_size, pars);
+    cv::setTrackbarMin("dilate_size", pars->debug_window_name, 1);
 
-    cv::createTrackbar(
-      "Morph Size", pars->debug_window_name, &notches->dilate_shape_size, 25, &callback_morph_win, pars);
-    cv::setTrackbarMin("Morph Size", pars->debug_window_name, 1);
-
-    cv::createTrackbar("Morph Iter", pars->debug_window_name, &notches->dilate_iter, 50, &callback_morph_iter, pars);
-    cv::setTrackbarMin("Morph Iter", pars->debug_window_name, 1);
+    cv::createTrackbar("dilate_iter", pars->debug_window_name, &notches->dilate_iter, 50, &callback_dilate_iter, pars);
+    cv::setTrackbarMin("dilate_iter", pars->debug_window_name, 1);
   }
 
   Strings
   texify_pars(const flow::Parameters &pars)
   {
-    std::stringstream win_size;
-    std::stringstream max_pts;
-    std::stringstream pt_dist;
-    std::stringstream morph_win;
-    std::stringstream morph_iter;
+    std::stringstream lk_win_size;
+    std::stringstream max_n_pts;
+    std::stringstream min_pt_dist;
+    std::stringstream dilate_size;
+    std::stringstream dilate_iter;
 
-    win_size << "winsize: " << pars.lk_win_size;
-    max_pts << "maxpts: " << pars.max_n_pts;
-    pt_dist << "minptdist: " << pars.min_pt_dist;
-    morph_win << "morphwin: " << pars.dilate_shape.size;
-    morph_iter << "morphiter: " << pars.dilate_iter;
+    lk_win_size << "lk_win_size: " << pars.lk_win_size;
+    max_n_pts << "max_n_pts: " << pars.max_n_pts;
+    min_pt_dist << "min_pt_dist: " << pars.min_pt_dist;
+    dilate_size << "dilate_size: " << pars.dilate_shape.size;
+    dilate_iter << "dilate_iter: " << pars.dilate_iter;
 
-    Strings text_pars = {win_size.str(), max_pts.str(), pt_dist.str(), morph_win.str(), morph_iter.str()};
+    Strings text_pars = {lk_win_size.str(), max_n_pts.str(), min_pt_dist.str(), dilate_size.str(), dilate_iter.str()};
 
     return text_pars;
   }

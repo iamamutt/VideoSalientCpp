@@ -1,5 +1,5 @@
-#ifndef SALIENCY_IMAGE_TOOLS_H
-#define SALIENCY_IMAGE_TOOLS_H
+#ifndef SALIENCY_CV_TOOLS_H
+#define SALIENCY_CV_TOOLS_H
 
 #include "shared_objects.h"
 #include "tools.h"
@@ -7,6 +7,11 @@
 #include <numeric>
 #include <opencv2/opencv.hpp>
 #include <utility>
+
+inline const cv::Mat LMS_INV_MAT = (cv::Mat_<float>({0.09920824552, 0.6493363330, 0.2514554215, -0.23151325029,
+                                                     -0.5558661786, 0.7873794289, -0.90495899299, 0.6393307418,
+                                                     0.2656282512}))
+                                     .reshape(1, 3);
 
 namespace imtools {
 
@@ -224,7 +229,7 @@ sum_non_zero(cv::Mat &mat)
 cv::Mat
 sum_images(const MatVec &I32FC1U)
 {
-  // all images must be the same kern_size
+  // all images must be the same size
   if (I32FC1U.empty()) return cv::Mat(0, 0, CV_32FC1);
   cv::Mat dst = make_black(I32FC1U[0], CV_32FC1);
   for (auto &img : I32FC1U) dst += img;
@@ -264,6 +269,13 @@ cv::Mat
 imresize(const cv::Mat &src_image, const ImageDims &dims)
 {
   return imresize(src_image, dims.resize, true);
+}
+
+int
+min_dim(const cv::Size &dims)
+{
+  if (dims.empty()) return 0;
+  return std::min(dims.height, dims.width);
 }
 
 MatVec
@@ -357,47 +369,8 @@ tanh(cv::Mat &mat)
 cv::Mat
 lms_inv(const cv::Mat &row_mat = cv::Mat(0, 0, CV_32FC3))
 {
-  // row-wise allocation, matrix is for BGR ordered images
-  cv::Mat lms = (cv::Mat_<float>(
-    {0.09920825, 0.64933633, 0.25145542, -0.23151325, -0.55586618, 0.78737943, -0.90495899, 0.63933074, 0.26562825}));
-
-  lms = lms.reshape(1, 3);
-
-  if (row_mat.empty()) return lms;
-
-  return lms * row_mat;
-}
-
-auto
-bgr32FC3U_to_DKL(const cv::Mat &I32FC3U)
-{
-  // converts MxNx3 image to 3x(M*N)
-  cv::Mat row_mat = I32FC3U.reshape(3, I32FC3U.total()).reshape(1).t();
-
-  // transformation
-  auto dkl = lms_inv(row_mat);
-
-  // luminance, long (~red) + medium (~green) cone response
-  cv::Mat l_plus_m = dkl.row(0);
-
-  // red vs. green, difference of long and medium cones
-  cv::Mat l_minus_m = dkl.row(1);
-
-  // blue vs. yellow, short (~blue) cone response minus L+M
-  cv::Mat l_plus_m_minus_s = dkl.row(2);
-
-  // convert back to matrix
-  l_plus_m         = l_plus_m.reshape(1, I32FC3U.rows);
-  l_minus_m        = l_minus_m.reshape(1, I32FC3U.rows);
-  l_plus_m_minus_s = l_plus_m_minus_s.reshape(1, I32FC3U.rows);
-
-  // rescale chromatic competition channels
-  l_minus_m += 1.f;
-  l_minus_m /= 2.f;
-  l_plus_m_minus_s += 1.f;
-  l_plus_m_minus_s /= 2.f;
-
-  return std::make_tuple(l_plus_m, l_minus_m, l_plus_m_minus_s);
+  if (row_mat.empty()) return LMS_INV_MAT;
+  return LMS_INV_MAT * row_mat;
 }
 
 template<typename T>
@@ -672,7 +645,7 @@ kernels_lap_of_gauss(int max_size, int n = -1)
   MatVec kernels;
   if (max_size <= 0 || n == 0) return kernels;
 
-  // minimum kernel kern_size is 7x7
+  // minimum kernel size is 7x7
   int min_size  = 7;
   max_size      = std::max(max_size, min_size);
   n             = n == -1 ? max_size : n;
@@ -856,8 +829,29 @@ print_image_value_info(const cv::Mat &image)
   cv::meanStdDev(image, mu, sigma);
   auto range = global_range(image);
   auto med   = global_median(image);
-  std::cout << "kern_size=" << image.size() << ", range=" << range << ",  median=" << med << ",  mean=" << mu
+  std::cout << "size=" << image.size() << ", range=" << range << ",  median=" << med << ",  mean=" << mu
             << ", sd=" << sigma << std::endl;
+}
+
+auto
+bgr32FC3U_to_DKL(const cv::Mat &I32FC3U)
+{
+  // converts MxNx3 image to 3x(M*N)
+  cv::Mat row_mat = I32FC3U.reshape(3, I32FC3U.total()).reshape(1).t();
+
+  // transformation
+  auto dkl = lms_inv(row_mat);
+
+  // luminance, long (~red) + medium (~green) cone response, [0, 1]
+  cv::Mat l_plus_m = dkl.row(0).reshape(1, I32FC3U.rows);
+
+  // cyan vs. red, difference of long and medium cones, [-0.7873794289, 0.7873794289]
+  cv::Mat l_minus_m = dkl.row(1).reshape(1, I32FC3U.rows);
+
+  // blue vs. yellow, short (~blue) cone response minus L+M, [-0.9049589930, 0.9049589930]
+  cv::Mat l_plus_m_minus_s = dkl.row(2).reshape(1, I32FC3U.rows);
+
+  return std::make_tuple(l_plus_m, l_minus_m, l_plus_m_minus_s);
 }
 
 void
@@ -932,7 +926,7 @@ setup_image_layout(const MatVec &mat_vec,
   for (int r = 0; r < m_rows; ++r) {
     for (int c = 0; c < n_cols; ++c) {
       if (img_index < n_images) {
-        // place x,y kern_size of current image in matrix
+        // place x,y size of current image in matrix
         tmp_heights.at<double>(r, c) = mat_vec[img_index].rows * display.scale;
         tmp_widths.at<double>(r, c)  = mat_vec[img_index].cols * display.scale;
       } else {
@@ -943,7 +937,7 @@ setup_image_layout(const MatVec &mat_vec,
     }
   }
 
-  // find mat kern_size of each image to kern_size width and height of display
+  // find mat size of each image to size width and height of display
   double img_height = 0;
   double img_width;
 
@@ -1131,4 +1125,4 @@ win_opened(const int &key_pressed,
 }
 }  // namespace imtools
 
-#endif  // SALIENCY_IMAGE_TOOLS_H
+#endif  // SALIENCY_CV_TOOLS_H

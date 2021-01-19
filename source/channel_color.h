@@ -1,7 +1,7 @@
 #ifndef SALIENCY_CHANNEL_COLOR_H
 #define SALIENCY_CHANNEL_COLOR_H
 
-#include "image_tools.h"
+#include "cv_tools.h"
 
 namespace color {
 
@@ -11,52 +11,6 @@ enum class ColorSpace
   LAB = 1,
   RGB = 2
 };
-
-cv::Mat
-lms_inv(const cv::Mat &row_mat = cv::Mat(0, 0, CV_32FC3))
-{
-  // row-wise allocation, matrix is for BGR ordered images
-  cv::Mat lms = (cv::Mat_<float>(
-    {0.09920825, 0.64933633, 0.25145542, -0.23151325, -0.55586618, 0.78737943, -0.90495899, 0.63933074, 0.26562825}));
-
-  lms = lms.reshape(1, 3);
-
-  if (row_mat.empty()) return lms;
-
-  return lms * row_mat;
-}
-
-auto
-bgr32FC3U_to_DKL(const cv::Mat &I32FC3U)
-{
-  // converts MxNx3 image to 3x(M*N)
-  cv::Mat row_mat = I32FC3U.reshape(3, I32FC3U.total()).reshape(1).t();
-
-  // transformation
-  auto dkl = lms_inv(row_mat);
-
-  // luminance, long (~red) + medium (~green) cone response
-  cv::Mat l_plus_m = dkl.row(0);
-
-  // red vs. green, difference of long and medium cones
-  cv::Mat l_minus_m = dkl.row(1);
-
-  // blue vs. yellow, short (~blue) cone response minus L+M
-  cv::Mat l_plus_m_minus_s = dkl.row(2);
-
-  // convert back to matrix
-  l_plus_m         = l_plus_m.reshape(1, I32FC3U.rows);
-  l_minus_m        = l_minus_m.reshape(1, I32FC3U.rows);
-  l_plus_m_minus_s = l_plus_m_minus_s.reshape(1, I32FC3U.rows);
-
-  // rescale chromatic competition channels
-  l_minus_m += 1.f;
-  l_minus_m /= 2.f;
-  l_plus_m_minus_s += 1.f;
-  l_plus_m_minus_s /= 2.f;
-
-  return std::make_tuple(l_plus_m, l_minus_m, l_plus_m_minus_s);
-}
 
 MatVec
 luma_chroma_compress(MatVec &images, const float &k, const float &m, const float &scale)
@@ -112,12 +66,13 @@ cspace_rgb(const cv::Mat &I32FC3U)
 MatVec
 cspace_dkl(const cv::Mat &I32FC3U)
 {
-  // returned scales: 0:1, 0:1, 0:1
-  auto [lightness, red_v_grn, blu_v_ylw] = bgr32FC3U_to_DKL(I32FC3U);
+  auto [lightness, red_v_grn, blu_v_ylw] = imtools::bgr32FC3U_to_DKL(I32FC3U);
 
-  // fold absolute intensity for competing color channels, rescale in range [0,1]
-  imtools::unit_flt_to_zero_center(red_v_grn);
-  imtools::unit_flt_to_zero_center(blu_v_ylw);
+  // adjust to -1,1
+  red_v_grn *= 1.27003572f;
+  blu_v_ylw *= 1.10502244f;
+
+  // fold absolute intensity for competing color channels
   red_v_grn = cv::abs(red_v_grn);
   blu_v_ylw = cv::abs(blu_v_ylw);
 
@@ -146,29 +101,49 @@ white_pt_norm(const ColorSpace &cspace, const float &scale, const float &shift)
   return static_cast<float>(max_v);
 }
 
+struct DefaultPars
+{
+  std::string colorspace = "dkl";
+  float scale            = 1;
+  float shift            = 0.5;
+  float weight           = 1;
+
+  DefaultPars() = default;
+
+  explicit DefaultPars(int) {}
+
+  explicit DefaultPars(const cv::FileNode &node, int size = 0) : DefaultPars(size)
+  {
+    if (node.empty()) return;
+
+    colorspace = yml_node_value<std::string>(node["colorspace"], "LAB");
+    scale      = yml_node_value(node["scale"], scale);
+    shift      = yml_node_value(node["shift"], shift);
+    weight     = yml_node_value(node["weight"], weight);
+  }
+};
+
 struct Parameters
 {
   std::string debug_window_name = "ColorChannel";
+  bool toggled                  = true;
+
+  float weight;
   float scale;
   float shift;
-  float norm_value;
-  float weight;
-  bool toggled = true;
-  ColorSpace cspace;
 
-  explicit Parameters(const std::string &colorspace = "dkl", float rescale = 1, float filter = 0, float _weight = 1)
-    : shift(filter), weight(_weight), norm_value(1)
+  ColorSpace cspace;
+  float norm_value;
+
+  explicit Parameters(const DefaultPars &defaults = DefaultPars())
+    : scale(std::max(0.5f, defaults.scale)), shift(defaults.shift), weight(defaults.weight)
   {
-    if (rescale < 1) {
-      scale = shift * (1.f - (1.f / shift));
-    } else {
-      scale = rescale;
-    }
-    if (to_lower(colorspace) == "lab") {
+
+    if (to_lower(defaults.colorspace) == "lab") {
       cspace = ColorSpace::LAB;
-    } else if (to_lower(colorspace) == "rgb") {
+    } else if (to_lower(defaults.colorspace) == "rgb") {
       cspace = ColorSpace::RGB;
-    } else if (to_lower(colorspace) == "dkl") {
+    } else if (to_lower(defaults.colorspace) == "dkl") {
       cspace = ColorSpace::DKL;
     } else {
       std::cerr << "Invalid colorspace value, "
@@ -176,6 +151,7 @@ struct Parameters
                 << std::endl;
       cspace = ColorSpace::DKL;
     }
+
     norm_value = white_pt_norm(cspace, scale, shift);
   };
 };
@@ -205,7 +181,7 @@ detect(const cv::Mat &I32FC3U, const color::Parameters &pars)
 // *******************************************************
 namespace debug {
   void
-  callback_brighten(int pos, void *user_data)
+  callback_scale(int pos, void *user_data)
   {
     auto *pars       = (Parameters *)user_data;
     pars->scale      = static_cast<float>(pos);
@@ -214,7 +190,7 @@ namespace debug {
   }
 
   void
-  callback_filter(int pos, void *user_data)
+  callback_shift(int pos, void *user_data)
   {
     auto *pars       = (Parameters *)user_data;
     pars->shift      = static_cast<float>(pos) * .01f;
@@ -223,7 +199,7 @@ namespace debug {
   }
 
   void
-  callback_colorspace(int pos, void *user_data)
+  callback_cspace(int pos, void *user_data)
   {
     auto *pars       = (Parameters *)user_data;
     pars->cspace     = static_cast<color::ColorSpace>(pos);
@@ -249,11 +225,11 @@ namespace debug {
   create_trackbar(color::debug::TrackbarPositions *notches, color::Parameters *pars)
   {
     if (!pars->toggled) return;
-    cv::namedWindow(pars->debug_window_name, cv::WINDOW_NORMAL);
-    cv::createTrackbar("scale", pars->debug_window_name, &notches->scale, 50, &callback_brighten, pars);
+    cv::namedWindow(pars->debug_window_name, cv::WINDOW_AUTOSIZE);
+    cv::createTrackbar("scale", pars->debug_window_name, &notches->scale, 50, &callback_scale, pars);
     cv::setTrackbarMin("scale", pars->debug_window_name, 1);
-    cv::createTrackbar("shift", pars->debug_window_name, &notches->shift, 100, &callback_filter, pars);
-    cv::createTrackbar("cspace", pars->debug_window_name, &notches->cspace, 2, &callback_colorspace, pars);
+    cv::createTrackbar("shift", pars->debug_window_name, &notches->shift, 100, &callback_shift, pars);
+    cv::createTrackbar("cspace", pars->debug_window_name, &notches->cspace, 2, &callback_cspace, pars);
   }
 
   std::vector<Strings>

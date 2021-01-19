@@ -2,7 +2,7 @@
 #define SALIENCY_CAPTURE_H
 
 #include "command_line.h"
-#include "image_tools.h"
+#include "cv_tools.h"
 
 namespace cap {
 
